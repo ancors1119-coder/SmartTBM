@@ -2702,7 +2702,7 @@
             }, [myTbms]);
 
             const stats = useMemo(() => {
-                const yearTbms = tbms.filter(t => t.date.startsWith(currentYear));
+                const yearTbms = myTbms.filter(t => t.date.startsWith(currentYear));
                 const total = yearTbms.length;
                 const safeCount = yearTbms.filter(t => t.riskAssessmentDone).length;
                 const monthlyData = Array.from({length: 12}, (_, i) => ({ label: `${i+1}월`, value: 0 }));
@@ -2710,7 +2710,7 @@
                     if(t.date) monthlyData[new Date(t.date).getMonth()].value++;
                 });
                 return { total, safeCount, monthlyData: monthlyData }; // REMOVED SLICE
-            }, [tbms, currentYear]);
+            }, [myTbms, currentYear]);
 
             if (loading && !user && view !== 'login') return <div className="h-screen flex items-center justify-center flex-col"><i className="fas fa-circle-notch fa-spin text-4xl text-indigo-600 mb-4"></i><p>Loading...</p></div>;
 
@@ -2748,7 +2748,7 @@
                                 setMobileMenuOpen={setMobileMenuOpen}
                             />
                             <main className="flex-1 md:ml-64 p-4 sm:p-6 md:p-8 overflow-y-auto h-[100dvh] pt-[4.5rem] md:pt-8 app-main">
-                                {view === 'dashboard' && <DashboardView stats={stats} tbms={tbms} currentYear={currentYear} setCurrentYear={setCurrentYear} allTbms={tbms} availableYears={availableYears} />}
+                                {view === 'dashboard' && <DashboardView stats={stats} tbms={myTbms} currentYear={currentYear} setCurrentYear={setCurrentYear} allTbms={myTbms} availableYears={availableYears} />}
                                 {view === 'today' && <ActionQueueView title="오늘 작업" subtitle="오늘 날짜로 작성된 TBM을 빠르게 확인합니다" items={todayQueue} emptyMessage="오늘 등록된 작업이 없습니다." accent="sky" onEdit={handleEditTbm} onPdfDownload={handlePdfDownload} user={user} setView={setView} />}
                                 {view === 'risks' && <ActionQueueView title="미조치 위험요인" subtitle="조치여부가 '아니오'인 위험요인을 모아봅니다" items={riskQueue} emptyMessage="현재 미조치 위험요인이 없습니다." accent="rose" onEdit={handleEditTbm} onPdfDownload={handlePdfDownload} user={user} setView={setView} />}
                                 {view === 'list' && (
