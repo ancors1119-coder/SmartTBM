@@ -1828,7 +1828,7 @@
             const leaderSignatureRef = useRef(null);
             const briefingDoneRef = useRef(null);
             const briefingActionRef = useRef(null);
-            const draftKey = `tbm_draft_${user.department}`;
+            const draftKey = `tbm_draft_v2_${user.department}`;
             const requiredCompletedCount = useMemo(() => {
                 const leader = (form.attendees || []).find(att => att.isLeader);
                 return [
@@ -1847,6 +1847,11 @@
                 if (!raw) return;
                 try {
                     const saved = JSON.parse(raw);
+                    // 지난 날짜의 임시저장은 버린다 (TBM은 당일 단위 문서)
+                    if (saved.date !== getLocalDateInputValue()) {
+                        localStorage.removeItem(draftKey);
+                        return;
+                    }
                     setForm(prev => ({ ...prev, ...saved }));
                     setDraftRestored(true);
                     showToast("이전에 작성 중이던 내용을 불러왔습니다.", "info");
