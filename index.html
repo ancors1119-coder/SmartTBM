@@ -700,13 +700,13 @@ ${a.company}` : '협력사') : '자사');
             const LINE = '#c9cdd2';
             const TINT = '#fbf1f1';
             const MUTED = '#6b7280';
-            const TH = { borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, background: TINT, color: INK, padding: '4px 6px 9px', textAlign: 'center', fontWeight: 700, fontSize: '12px', verticalAlign: 'middle', lineHeight: 1.3 };
-            const TD = { borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, padding: '4px 8px 9px', verticalAlign: 'middle', lineHeight: 1.45, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' };
+            const TH = { borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, background: TINT, color: INK, padding: '0px 6px 12px', textAlign: 'center', fontWeight: 700, fontSize: '12px', verticalAlign: 'middle', lineHeight: 1.3 };
+            const TD = { borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, padding: '0px 8px 12px', verticalAlign: 'middle', lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'keep-all', whiteSpace: 'pre-wrap' };
             const TABLE = { width: '100%', borderCollapse: 'separate', borderSpacing: 0, borderTop: `1px solid ${LINE}`, borderLeft: `1px solid ${LINE}`, tableLayout: 'fixed' };
-            const BOX = { border: `1px solid ${LINE}`, padding: '8px 10px 12px', minHeight: '42px', whiteSpace: 'pre-wrap', lineHeight: 1.55 };
+            const BOX = { border: `1px solid ${LINE}`, padding: '4px 10px 16px', minHeight: '42px', whiteSpace: 'pre-wrap', lineHeight: 1.55 };
             const LEVEL = { '상': { background: RED, color: '#fff' }, '중': { background: '#fde7c7', color: '#9a3412' }, '하': { background: '#eceef1', color: '#4b5563' } };
             const Level = ({ v }) => (v
-                ? <span style={{ display: 'inline-block', minWidth: '24px', padding: '1px 6px 5px', borderRadius: '3px', fontWeight: 800, fontSize: '12px', ...(LEVEL[v] || LEVEL['하']) }}>{v}</span>
+                ? <span style={{ display: 'inline-block', position: 'relative', top: '6px', minWidth: '24px', padding: '0px 6px 10px', lineHeight: 1, borderRadius: '3px', fontWeight: 800, fontSize: '12px', ...(LEVEL[v] || LEVEL['하']) }}>{v}</span>
                 : '-');
             const status = (r) => {
                 if ((r.result || 'yes') !== 'no') return <span style={{ color: '#15803d', fontWeight: 700 }}>✓ 완료</span>;
@@ -733,8 +733,8 @@ ${a.company}` : '협력사') : '자사');
                     title: '오늘의 중점 위험요인',
                     body: (
                         <div style={{ display: 'flex', border: `2px solid ${RED}` }}>
-                            <div style={{ background: RED, color: '#fff', width: '30mm', padding: '8px 10px 12px', fontWeight: 800, fontSize: '13px', lineHeight: 1.35, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>★ 중점 위험<span style={{ fontSize: '11px', fontWeight: 600, opacity: 0.9, marginTop: '2px' }}>중대재해 우려</span></div>
-                            <div style={{ flex: 1, padding: '8px 12px 12px' }}>
+                            <div style={{ background: RED, color: '#fff', width: '30mm', padding: '4px 10px 16px', fontWeight: 800, fontSize: '13px', lineHeight: 1.35, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>★ 중점 위험<span style={{ fontSize: '11px', fontWeight: 600, opacity: 0.9, marginTop: '2px' }}>중대재해 우려</span></div>
+                            <div style={{ flex: 1, padding: '4px 12px 16px' }}>
                                 <div style={{ fontSize: '16px', fontWeight: 800, color: INK, lineHeight: 1.4 }}>{keyRisk.factor}</div>
                                 <div style={{ marginTop: '4px', lineHeight: 1.5 }}><span style={{ color: RED, fontWeight: 700 }}>대책 </span>{keyRisk.measure || '-'}</div>
                             </div>
@@ -753,7 +753,7 @@ ${a.company}` : '협력사') : '자사');
                                     <th style={{ ...TH, width: '9%' }}>위험성</th>
                                     <th style={{ ...TH, width: '27%' }}>감소대책</th>
                                     <th style={{ ...TH, width: '11%' }}>조치</th>
-                                    <th style={{ ...TH, width: '19%' }}>미조치 시 잠정조치·기한·담당</th>
+                                    <th style={{ ...TH, width: '19%' }}>잠정조치·기한·담당</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -918,11 +918,11 @@ ${a.company}` : '협력사') : '자사');
                             <table style={{ ...TABLE, width: '62mm' }}>
                                 <tbody>
                                     <tr>
-                                        <th style={{ ...TH, fontSize: '11px', padding: '3px 4px 7px' }}>TBM 리더</th>
-                                        <th style={{ ...TH, fontSize: '11px', padding: '3px 4px 7px' }}>관리감독자</th>
+                                        <th style={{ ...TH, fontSize: '11px', padding: '0px 4px 12px' }}>TBM 리더</th>
+                                        <th style={{ ...TH, fontSize: '11px', padding: '0px 4px 12px' }}>관리감독자</th>
                                     </tr>
                                     <tr>
-                                        <td style={{ ...TD, height: '44px', textAlign: 'center', padding: '2px' }}>
+                                        <td style={{ ...TD, height: '44px', textAlign: 'center', padding: '0px 2px 8px' }}>
                                             {leaderAtt?.signatureUrl
                                                 ? <img src={leaderAtt.signatureUrl} alt="서명" style={{ maxHeight: '36px', maxWidth: '100%', display: 'inline-block' }} />
                                                 : <span style={{ color: '#c2410c', fontSize: '11px', fontWeight: 700 }}>미서명</span>}
@@ -930,8 +930,8 @@ ${a.company}` : '협력사') : '자사');
                                         <td style={{ ...TD, height: '44px' }}></td>
                                     </tr>
                                     <tr>
-                                        <td style={{ ...TD, textAlign: 'center', fontSize: '11.5px', fontWeight: 700, padding: '2px 4px 7px' }}>{leaderName}</td>
-                                        <td style={{ ...TD, textAlign: 'center', fontSize: '11px', color: MUTED, padding: '2px 4px 7px' }}>(서명)</td>
+                                        <td style={{ ...TD, textAlign: 'center', fontSize: '11.5px', fontWeight: 700, padding: '0px 4px 12px' }}>{leaderName}</td>
+                                        <td style={{ ...TD, textAlign: 'center', fontSize: '11px', color: MUTED, padding: '0px 4px 12px' }}>(서명)</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -954,7 +954,7 @@ ${a.company}` : '협력사') : '자사');
                                         <th style={TH}>TBM 리더</th><td style={TD}>{leaderName}</td>
                                         <th style={TH}>현장 환경</th><td style={TD}>온도 {tbm.temperature || '-'}℃ · 습도 {tbm.humidity || '-'}%</td>
                                     </tr>
-                                    <tr><th style={TH}>작업 내용</th><td colSpan="3" style={{ ...TD, height: '46px', verticalAlign: 'top' }}>{tbm.workDesc}</td></tr>
+                                    <tr><th style={TH}>작업 내용</th><td colSpan="3" style={{ ...TD, height: '46px' }}>{tbm.workDesc}</td></tr>
                                     {tbm.preJobBriefingDone === false && (
                                         <tr><th style={{ ...TH, color: '#c2410c' }}>공유 미실시</th><td colSpan="3" style={TD}>{tbm.preJobBriefingAction || '-'}</td></tr>
                                     )}
