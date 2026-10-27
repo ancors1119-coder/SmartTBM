@@ -2009,21 +2009,21 @@ ${a.company}` : '협력사') : '자사');
                                 필수 입력: <b className="text-slate-900">작업명·장소·위험요인·준수사항·리더 서명</b>
                                 <span className="ml-2 text-slate-500">임시저장 {autoSaveState === 'saving' ? '저장 중...' : autoSaveState === 'saved' ? `저장됨 · ${lastAutoSavedAt}` : autoSaveState === 'error' ? '실패' : '-'}</span>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="relative flex flex-wrap items-center gap-2">
                                 <span className={`shrink-0 px-2.5 py-1 rounded text-xs font-bold ${isReadyToSave ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
                                     {isReadyToSave ? '저장 가능' : '필수항목 확인 필요'}
                                 </span>
                                 <button onClick={() => handleLoadPrevious()} className="btn btn-ghost !min-h-[36px] !px-3 text-[13px]">
                                     <i className="fas fa-copy text-slate-400"></i>전주복사
                                 </button>
-                                <div className="relative">
+                                <div>
                                     <button onClick={()=>setShowCopyOptions(v=>!v)} className="btn btn-ghost !min-h-[36px] !px-3 text-[13px]">
                                         <i className="fas fa-sliders text-slate-400"></i>복사범위
                                     </button>
                                     {showCopyOptions && (
-                                        <div className="absolute left-0 top-full mt-2 z-30 w-64 bg-white border border-slate-200 rounded-lg p-3 text-sm text-slate-700 shadow-lg">
+                                        <div className="absolute left-0 lg:left-auto lg:right-0 top-full mt-2 z-30 w-[300px] max-w-full bg-white border border-slate-200 rounded-lg p-3 text-sm text-slate-700 shadow-lg">
                                             <div className="font-bold mb-2 text-slate-900">전주 내용 복사 범위</div>
-                                            <div className="grid grid-cols-2 gap-2">
+                                            <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:whitespace-nowrap">
                                                 <label className="flex items-center gap-2"><input type="checkbox" checked={copyOptions.overview} onChange={()=>toggleCopyOption('overview')} />작업개요</label>
                                                 <label className="flex items-center gap-2"><input type="checkbox" checked={copyOptions.risks} onChange={()=>toggleCopyOption('risks')} />위험요인·준수사항</label>
                                                 <label className="flex items-center gap-2"><input type="checkbox" checked={copyOptions.checks} onChange={()=>toggleCopyOption('checks')} />점검결과</label>
