@@ -344,6 +344,11 @@
             return new Date(now.getTime() - offsetMs).toISOString().split('T')[0];
         };
 
+        const getLocalTimeValue = () => {
+            const now = new Date();
+            return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        };
+
         const hashPassword = async (plainText) => {
             const msgUint8 = new TextEncoder().encode(String(plainText || ''));
             const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
@@ -673,81 +678,192 @@
             return ReactDOM.createPortal(modalUi, document.body);
         };
 
-        // --- Hidden PDF Generator (Auto Download - Fixed Layout) ---
+        // --- Hidden PDF Generator: 한 장짜리 문서를 그린 뒤 행 경계에서 A4로 나눈다 ---
         const PdfHiddenGenerator = ({ tbm, onComplete }) => {
-            const pageRefs = useRef([]);
-            pageRefs.current = [];
+            const docRef = useRef(null);
+            const risks = (tbm.risks || []).filter(r => String(r.factor || '').trim());
+            const keyRisk = risks.find(r => String(r.id) === String(tbm.keyRiskId))
+                || (tbm.keyRiskFactor && tbm.keyRiskFactor !== 'N/A' ? { factor: tbm.keyRiskFactor, measure: tbm.keyRiskMeasure } : null);
+            const attendees = (tbm.attendees || []).filter(a => a && (a.isLeader || String(a.name || '').trim()));
+            const subCount = attendees.filter(a => a.affiliation === 'sub').length;
+            const leaderAtt = attendees.find(a => a.isLeader);
+            const leaderName = tbm.leader || leaderAtt?.name || '-';
+            const pre = tbm.preChecks || {};
+            const mmdd = (iso) => (iso ? String(iso).slice(5, 10).replace('-', '.') : '');
+            const isKey = (r) => keyRisk && (String(r.id) === String(tbm.keyRiskId) || r.factor === keyRisk.factor);
+            const affiliationText = (a) => (a?.affiliation === 'sub' ? (a.company ? `협력사
+${a.company}` : '협력사') : '자사');
 
-            const chunkArray = (items, chunkSize) => {
-                const source = Array.isArray(items) ? items : [];
-                if (source.length === 0) return [[]];
-                const chunks = [];
-                for (let i = 0; i < source.length; i += chunkSize) {
-                    chunks.push(source.slice(i, i + chunkSize));
+            const TH = { border: '1px solid #000', background: '#f1f1f1', padding: '3px 6px 9px', textAlign: 'center', fontWeight: 700, verticalAlign: 'middle', lineHeight: 1.3 };
+            const TD = { border: '1px solid #000', padding: '3px 8px 9px', verticalAlign: 'middle', lineHeight: 1.4, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' };
+            const TABLE = { width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' };
+            const H = { fontWeight: 700, fontSize: '14px', borderLeft: '4px solid #000', paddingLeft: '8px', margin: '0 0 8px' };
+            const BOX = { border: '1px solid #000', padding: '8px 10px', minHeight: '40px', whiteSpace: 'pre-wrap', lineHeight: 1.5 };
+            const check = (v) => (v ? '☑' : '☐');
+
+            const sections = [
+                {
+                    title: '위험요인 및 감소대책 (위험성평가 결과 공유)',
+                    body: (
+                        <>
+                            <table style={TABLE}>
+                                <thead>
+                                    <tr>
+                                        <th style={{ ...TH, width: '7%' }}>No</th>
+                                        <th style={{ ...TH, width: '26%' }}>유해·위험요인</th>
+                                        <th style={{ ...TH, width: '9%' }}>위험성</th>
+                                        <th style={{ ...TH, width: '26%' }}>감소대책</th>
+                                        <th style={{ ...TH, width: '12%' }}>조치</th>
+                                        <th style={{ ...TH, width: '20%' }}>미조치 시 잠정조치·기한·담당</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {risks.length === 0 ? (
+                                        <tr><td colSpan="6" style={{ ...TD, textAlign: 'center', color: '#666' }}>기록 없음</td></tr>
+                                    ) : risks.map((r, i) => {
+                                        const no = (r.result || 'yes') === 'no';
+                                        const detail = no
+                                            ? [r.action || '-', r.dueDate ? `기한 ${r.dueDate}` : '', r.owner ? `담당 ${r.owner}` : '', r.resolvedAt ? `→ ${r.resolution || '조치완료'}` : ''].filter(Boolean).join('\n')
+                                            : '-';
+                                        return (
+                                            <tr key={i} style={isKey(r) ? { background: '#fff5f5' } : undefined}>
+                                                <td style={{ ...TD, textAlign: 'center', fontWeight: isKey(r) ? 700 : 400 }}>{isKey(r) ? `★${i + 1}` : i + 1}</td>
+                                                <td style={{ ...TD, fontWeight: isKey(r) ? 700 : 400 }}>{r.factor}</td>
+                                                <td style={{ ...TD, textAlign: 'center', fontWeight: 700 }}>{r.level || '-'}</td>
+                                                <td style={TD}>{r.measure || '-'}</td>
+                                                <td style={{ ...TD, textAlign: 'center' }}>{!no ? '☑ 완료' : r.resolvedAt ? `☑ 사후조치\n(${mmdd(r.resolvedAt)})` : '☐ 미조치'}</td>
+                                                <td style={{ ...TD, fontSize: '12px' }}>{detail}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                            <div style={{ marginTop: '4px', fontSize: '11px', color: '#555' }}>★ 중점 위험요인(중대재해로 이어질 수 있는 위험) · 위험성: 사업장 위험성평가 기준 상·중·하</div>
+                        </>
+                    )
+                },
+                {
+                    title: '중점 위험요인',
+                    body: (
+                        <table style={TABLE}>
+                            <tbody>
+                                <tr><th style={{ ...TH, width: '18%' }}>선정</th><td style={{ ...TD, fontWeight: 700 }}>{keyRisk?.factor || '-'}</td></tr>
+                                <tr><th style={TH}>대책</th><td style={TD}>{keyRisk?.measure || '-'}</td></tr>
+                            </tbody>
+                        </table>
+                    )
+                },
+                { title: '근로자 준수·주의사항', body: <div style={BOX}>{tbm.workerRules || '-'}</div> },
+                {
+                    title: '작업 전 안전점검',
+                    body: (
+                        <table style={TABLE}>
+                            <tbody>
+                                <tr>
+                                    <th style={{ ...TH, width: '18%' }}>점검 항목</th>
+                                    <td style={TD}>{check(pre.check1)} 보호구 착용　　{check(pre.check2)} 장비 점검　　{check(pre.check3)} 건강 상태</td>
+                                </tr>
+                                <tr><th style={TH}>점검 결과</th><td style={TD}>{tbm.dailyCheckResult || '특이사항 없음'}</td></tr>
+                            </tbody>
+                        </table>
+                    )
+                },
+                { title: '근로자 의견·아차사고', body: <div style={BOX}>{tbm.workerFeedback || '없음'}</div> },
+                tbm.photoUrl && {
+                    title: 'TBM 활동 사진',
+                    body: <div style={{ ...BOX, textAlign: 'center' }}><img src={tbm.photoUrl} alt="활동사진" style={{ maxHeight: '220px', maxWidth: '100%', objectFit: 'contain', display: 'inline-block' }} /></div>
+                },
+                {
+                    title: `참석자 명단 (총 ${attendees.length}명${subCount ? ` · 협력사 ${subCount}명` : ''})`,
+                    body: (
+                        <table style={TABLE}>
+                            <thead>
+                                <tr>
+                                    {[0, 1].map(k => (
+                                        <React.Fragment key={k}>
+                                            <th style={{ ...TH, width: '15%' }}>이름</th>
+                                            <th style={{ ...TH, width: '15%' }}>소속</th>
+                                            <th style={{ ...TH, width: '20%' }}>서명</th>
+                                        </React.Fragment>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {attendees.length === 0 ? (
+                                    <tr><td colSpan="6" style={{ ...TD, textAlign: 'center', color: '#666' }}>참석자 기록 없음</td></tr>
+                                ) : Array.from({ length: Math.ceil(attendees.length / 2) }, (_, row) => (
+                                    <tr key={row}>
+                                        {[attendees[row * 2], attendees[row * 2 + 1]].map((a, k) => (
+                                            <React.Fragment key={k}>
+                                                <td style={{ ...TD, textAlign: 'center', fontWeight: 700, height: '46px' }}>{a?.name || ''}</td>
+                                                <td style={{ ...TD, textAlign: 'center', fontSize: '12px' }}>{a ? affiliationText(a) : ''}</td>
+                                                <td style={{ ...TD, textAlign: 'center', padding: '3px' }}>
+                                                    {!a ? '' : a.isLeader
+                                                        ? (a.signatureUrl ? <img src={a.signatureUrl} alt="서명" style={{ maxHeight: '38px', maxWidth: '100%', display: 'inline-block' }} /> : <span style={{ color: '#c2410c', fontSize: '12px', fontWeight: 700 }}>(리더 미서명)</span>)
+                                                        : <span style={{ color: '#666', fontSize: '11px' }}>리더 확인으로 갈음</span>}
+                                                </td>
+                                            </React.Fragment>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )
                 }
-                return chunks;
-            };
+            ].filter(Boolean);
 
-            const riskRows = (tbm.risks && tbm.risks.length > 0) ? tbm.risks : [];
-            const safetyChecks = ((tbm.safetyActionChecks && tbm.safetyActionChecks.length > 0)
-                ? tbm.safetyActionChecks
-                : (tbm.risks || []).filter(r => (r.factor || '').trim() !== '').map(r => ({
-                    risk: r.factor,
-                    result: r.result || 'yes',
-                    action: r.action || ''
-                }))
-            );
-            const attendeePairs = [];
-            const attendees = tbm.attendees || [];
-            for (let i = 0; i < attendees.length; i += 2) {
-                attendeePairs.push([attendees[i], attendees[i + 1]]);
-            }
-
-            const riskChunks = chunkArray(riskRows, 8);
-            const safetyChunks = chunkArray(safetyChecks, 7);
-            const attendeeChunks = attendeePairs.length > 0 ? chunkArray(attendeePairs, 6) : [[null]];
-            
             useEffect(() => {
                 const generate = async () => {
-                    const pageNodes = pageRefs.current.filter(Boolean);
-                    if (pageNodes.length === 0) return;
+                    const node = docRef.current;
+                    if (!node) return;
                     try {
-                        if (document.fonts && document.fonts.ready) {
-                            await document.fonts.ready;
-                        }
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        const pdf = new jsPDF('p', 'mm', 'a4');
-                        const pageWidth = pdf.internal.pageSize.getWidth();
-                        const pageHeight = pdf.internal.pageSize.getHeight();
+                        if (document.fonts && document.fonts.ready) await document.fonts.ready;
+                        await Promise.all(Array.from(node.querySelectorAll('img')).map(img => (img.complete ? null : new Promise(res => { img.onload = img.onerror = res; }))));
+                        await new Promise(resolve => setTimeout(resolve, 300));
 
-                        for (let i = 0; i < pageNodes.length; i += 1) {
-                            const node = pageNodes[i];
-                            const canvas = await html2canvas(node, {
-                                scale: 2,
-                                useCORS: true,
-                                backgroundColor: '#ffffff',
-                                width: node.scrollWidth,
-                                height: node.scrollHeight,
-                                windowWidth: node.scrollWidth,
-                                windowHeight: node.scrollHeight
-                            });
-                            const imgData = canvas.toDataURL('image/jpeg', 0.92);
-                            if (i > 0) pdf.addPage();
-                            pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+                        // 쪽 나눔 후보: 표 본문 행·섹션 끝 (머리글 행 바로 뒤에서는 자르지 않음)
+                        const nodeTop = node.getBoundingClientRect().top;
+                        const cuts = Array.from(node.querySelectorAll('tbody tr, [data-pdf-block]')).map(el => el.getBoundingClientRect().bottom - nodeTop + 1);
+                        const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: node.scrollWidth });
+                        const ratio = canvas.height / node.offsetHeight;
+                        const cutPx = cuts.map(c => Math.round(c * ratio)).sort((a, b) => a - b);
+                        const contentEnd = canvas.height - 4;
+
+                        const pdf = new jsPDF('p', 'mm', 'a4');
+                        const pageW = pdf.internal.pageSize.getWidth();
+                        const pageH = pdf.internal.pageSize.getHeight();
+                        const pxPerMm = canvas.width / pageW;
+                        const MARGIN = 12; // 2쪽부터 위 여백, 모든 쪽 아래 여백(mm)
+                        let y = 0;
+                        let page = 0;
+                        while (y < contentEnd) {
+                            const top = page === 0 ? 0 : MARGIN * pxPerMm;
+                            let end = Math.min(contentEnd, Math.round(y + pageH * pxPerMm - top - MARGIN * pxPerMm));
+                            if (end < contentEnd) {
+                                const fit = cutPx.filter(c => c > y + 20 && c <= end);
+                                if (fit.length) end = fit[fit.length - 1];
+                            }
+                            const slice = document.createElement('canvas');
+                            slice.width = canvas.width;
+                            slice.height = Math.ceil(end - y);
+                            slice.getContext('2d').drawImage(canvas, 0, y, canvas.width, slice.height, 0, 0, canvas.width, slice.height);
+                            if (page > 0) pdf.addPage();
+                            pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 0, top / pxPerMm, pageW, slice.height / pxPerMm);
+                            y = end;
+                            page += 1;
                         }
                         const totalPages = pdf.getNumberOfPages();
-                        for (let page = 1; page <= totalPages; page += 1) {
-                            pdf.setPage(page);
+                        for (let p = 1; p <= totalPages; p += 1) {
+                            pdf.setPage(p);
                             pdf.setFontSize(9);
                             pdf.setTextColor(120, 130, 150);
-                            pdf.text(`${page} / ${totalPages}`, pageWidth - 18, pageHeight - 8, { align: 'right' });
+                            pdf.text(`${p} / ${totalPages}`, pageW - 14, pageH - 6, { align: 'right' });
                         }
                         pdf.save(`TBM_${tbm.date}_${tbm.department}.pdf`);
                         onComplete({ ok: true });
                     } catch (e) {
                         console.error("PDF Gen Error", e);
                         onComplete({ ok: false, error: e });
-                    } finally {
                     }
                 };
                 generate();
@@ -755,265 +871,58 @@
 
             return (
                 <div style={{ position: 'fixed', left: '-10000px', top: 0 }}>
-                    <div
-                        ref={(node) => { pageRefs.current[0] = node; }}
-                        className="pdf-doc bg-white p-8 text-black w-[210mm] min-h-[297mm] text-sm leading-relaxed border border-gray-300 font-sans"
-                        style={{ boxSizing: 'border-box' }}
-                    >
-                        <h1 className="text-3xl font-bold text-center mb-8 pb-4 border-b-2 border-black"><span style={{display:'block',fontSize:'0.46em',fontWeight:700,letterSpacing:'0.28em',marginBottom:'6px'}}>{COMPANY_NAME}</span>Tool Box Meeting 회의록</h1>
-                        
-                        <table className="w-full border-collapse border-2 border-black mb-6 table-fixed">
-                            <tbody>
-                                <tr className="h-10">
-                                    <th className="border border-black bg-gray-100 w-[15%] text-center align-middle font-bold" style={{verticalAlign: 'middle'}}>TBM 일시</th>
-                                    <td className="border border-black pl-2 align-middle" style={{verticalAlign: 'middle'}}>{tbm.date} {tbm.startTime} ~ {tbm.endTime}</td>
-                                    <th className="border border-black bg-gray-100 w-[15%] text-center align-middle font-bold" style={{verticalAlign: 'middle'}}>작성자</th>
-                                    <td className="border border-black pl-2 align-middle" style={{verticalAlign: 'middle'}}>{tbm.leader} ({tbm.department})</td>
-                                </tr>
-                                <tr className="h-10">
-                                    <th className="border border-black bg-gray-100 text-center align-middle font-bold" style={{verticalAlign: 'middle'}}>작업명</th>
-                                    <td colSpan="3" className="border border-black pl-2 align-middle font-bold" style={{verticalAlign: 'middle'}}>{tbm.workName}</td>
-                                </tr>
-                                <tr className="h-10">
-                                    <th className="border border-black bg-gray-100 text-center align-middle font-bold" style={{verticalAlign: 'middle'}}>작업장소</th>
-                                    <td className="border border-black pl-2 align-middle" style={{verticalAlign: 'middle'}}>{tbm.location}</td>
-                                    <th className="pdf-header-cell border border-black bg-gray-100 text-center align-middle font-bold text-xs" style={{verticalAlign: 'middle'}}><span className="pdf-header-text">위험성평가<br/>실시여부</span></th>
-                                    <td className="border border-black pl-2 align-middle text-center" style={{verticalAlign: 'middle'}}>{tbm.riskAssessmentDone ? '☑ 예' : '☐ 아니오'}</td>
-                                </tr>
-                                <tr className="h-10">
-                                    <th className="pdf-header-cell border border-black bg-gray-100 text-center align-middle font-bold text-xs" style={{verticalAlign: 'middle'}}>
-                                        <span className="pdf-header-text">작업 전 공유/교육<br/>실시여부</span>
-                                    </th>
-                                    <td className="border border-black pl-2 align-middle text-center" style={{verticalAlign: 'middle'}}>
-                                        {tbm.preJobBriefingDone === true ? '☑ 예' : tbm.preJobBriefingDone === false ? '☐ 아니오' : '-'}
-                                    </td>
-                                    <th className="pdf-header-cell border border-black bg-gray-100 text-center align-middle font-bold text-xs" style={{verticalAlign: 'middle'}}>
-                                        <span className="pdf-header-text">미실시 사유+즉시조치</span>
-                                    </th>
-                                    <td className="border border-black pl-2 align-middle whitespace-pre-wrap" style={{verticalAlign: 'middle'}}>
-                                        {tbm.preJobBriefingDone === false ? (tbm.preJobBriefingAction || '-') : '-'}
-                                    </td>
-                                </tr>
-                                <tr className="h-10">
-                                    <th className="border border-black bg-gray-100 text-center align-middle font-bold" style={{verticalAlign: 'middle'}}>현장 환경</th>
-                                    <td colSpan="3" className="border border-black pl-2 align-middle" style={{verticalAlign: 'middle'}}>
-                                        <span className="mr-6"><strong>온도:</strong> {tbm.temperature || '-'}℃</span>
-                                        <span><strong>습도:</strong> {tbm.humidity || '-'}%</span>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th className="border border-black bg-gray-100 text-center align-middle font-bold" style={{verticalAlign: 'middle'}}>작업내용</th>
-                                    <td colSpan="3" className="border border-black p-2 h-24 align-top whitespace-pre-wrap leading-normal" style={{verticalAlign: 'top'}}>{tbm.workDesc}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <div className="mb-6">
-                            <h4 className="font-bold mb-2 border-l-4 border-black pl-2">1. 위험요인 및 대책</h4>
-                            <table className="w-full border-collapse border border-black text-sm table-fixed" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', borderSpacing: 0 }}>
-                                <thead>
-                                    <tr className="bg-gray-100">
-                                        <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '10%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">No</span></th>
-                                        <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '45%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">잠재위험요인</span></th>
-                                        <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '45%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">안전대책</span></th>
-                                    </tr>
-                                </thead>
+                    <div ref={docRef} className="bg-white text-black" style={{ width: '210mm', padding: '12mm', boxSizing: 'border-box', fontSize: '13px' }}>
+                        <div data-pdf-block style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '14px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.28em' }}>{COMPANY_NAME}</div>
+                            <div style={{ fontSize: '22px', fontWeight: 800, marginTop: '4px' }}>작업 전 안전점검회의(TBM) 일지</div>
+                        </div>
+                        <div data-pdf-block style={{ marginBottom: '16px' }}>
+                            <table style={{ ...TABLE, border: '2px solid #000' }}>
                                 <tbody>
-                                    {riskChunks[0].length > 0 ? riskChunks[0].map((r, i) => (
-                                        <tr key={i}>
-                                            <td className="border border-black text-center align-middle" style={{verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.35}}>{i+1}</td>
-                                            <td className="border border-black whitespace-pre-wrap" style={{verticalAlign: 'middle', padding: '6px 8px', lineHeight: 1.35, overflowWrap: 'anywhere'}}><span className="pdf-body-text">{r.factor}</span></td>
-                                            <td className="border border-black whitespace-pre-wrap" style={{verticalAlign: 'middle', padding: '6px 8px', lineHeight: 1.35, overflowWrap: 'anywhere'}}><span className="pdf-body-text">{r.measure}</span></td>
-                                        </tr>
-                                    )) : <tr><td colSpan="3" className="border border-black text-center" style={{padding: '10px 8px', lineHeight: 1.35}}>기록 없음</td></tr>}
+                                    <tr>
+                                        <th style={{ ...TH, width: '15%' }}>TBM 일시</th>
+                                        <td style={{ ...TD, width: '35%' }}>{tbm.date} {tbm.tbmTime || tbm.startTime || ''}</td>
+                                        <th style={{ ...TH, width: '15%' }}>부서</th>
+                                        <td style={TD}>{tbm.department}</td>
+                                    </tr>
+                                    <tr><th style={TH}>작업명</th><td colSpan="3" style={{ ...TD, fontWeight: 700 }}>{tbm.workName}</td></tr>
+                                    <tr>
+                                        <th style={TH}>작업 장소</th><td style={TD}>{tbm.location}</td>
+                                        <th style={TH}>작업 시간</th><td style={TD}>{tbm.startTime} ~ {tbm.endTime}</td>
+                                    </tr>
+                                    <tr>
+                                        <th style={TH}>TBM 리더</th><td style={TD}>{leaderName}</td>
+                                        <th style={TH}>현장 환경</th><td style={TD}>온도 {tbm.temperature || '-'}℃ · 습도 {tbm.humidity || '-'}%</td>
+                                    </tr>
+                                    <tr><th style={TH}>작업 내용</th><td colSpan="3" style={{ ...TD, height: '60px', verticalAlign: 'top' }}>{tbm.workDesc}</td></tr>
+                                    {tbm.preJobBriefingDone === false && (
+                                        <tr><th style={TH}>공유 미실시</th><td colSpan="3" style={TD}>{tbm.preJobBriefingAction || '-'}</td></tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>
-
-                        <div className="mb-6">
-                            <table className="w-full border-collapse border-2 border-black table-fixed">
+                        {sections.map((s, i) => (
+                            <div key={i} data-pdf-block style={{ marginBottom: '16px' }}>
+                                <div style={H}>{i + 1}. {s.title}</div>
+                                {s.body}
+                            </div>
+                        ))}
+                        <div data-pdf-block>
+                            <table style={TABLE}>
                                 <tbody>
                                     <tr>
-                                        <th className="border border-black bg-gray-100 w-[15%] text-center align-middle font-bold" rowSpan="2" style={{verticalAlign: 'middle'}}>중점위험<br/>요인</th>
-                                        <th className="border border-black w-[15%] text-center align-middle bg-gray-50" style={{verticalAlign: 'middle'}}>선정</th>
-                                        <td className="border border-black p-2 align-middle font-bold whitespace-pre-wrap" style={{verticalAlign: 'middle'}}>{tbm.keyRiskFactor || '-'}</td>
+                                        <th style={{ ...TH, width: '18%' }}>작성(TBM 리더)</th>
+                                        <td style={{ ...TD, width: '32%', height: '52px' }}>
+                                            <span style={{ fontWeight: 700 }}>{leaderName}</span>
+                                            {leaderAtt?.signatureUrl && <img src={leaderAtt.signatureUrl} alt="서명" style={{ maxHeight: '36px', marginLeft: '10px', verticalAlign: 'middle', display: 'inline-block' }} />}
+                                        </td>
+                                        <th style={{ ...TH, width: '18%' }}>관리감독자 확인</th>
+                                        <td style={TD}></td>
                                     </tr>
-                                    <tr>
-                                        <th className="border border-black w-[15%] text-center align-middle bg-gray-50" style={{verticalAlign: 'middle'}}>대책</th>
-                                        <td className="border border-black p-2 align-middle text-blue-700 whitespace-pre-wrap" style={{verticalAlign: 'middle'}}>{tbm.keyRiskMeasure || '-'}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div className="mb-6">
-                            <h4 className="font-bold mb-2 border-l-4 border-black pl-2">2. 작업 전 안전조치 확인</h4>
-                            <table className="w-full border-collapse border border-black text-sm table-fixed" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', borderSpacing: 0 }}>
-                                <thead>
-                                    <tr className="bg-gray-100">
-                                        <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '50%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">잠재위험요소(중점위험 포함)</span></th>
-                                        <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '20%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">조치여부</span></th>
-                                        <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '30%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">'아니오'인 경우 조치내용</span></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {safetyChunks[0].length > 0 ? safetyChunks[0].map((check, i) => (
-                                        <tr key={i}>
-                                            <td className="border border-black whitespace-pre-wrap" style={{verticalAlign: 'middle', padding: '6px 8px', lineHeight: 1.35, overflowWrap: 'anywhere'}}><span className="pdf-body-text">{check.risk}</span></td>
-                                            <td className="border border-black text-center align-middle" style={{verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.35}}>
-                                                <span className="pdf-body-text">{check.result === 'yes' ? '☑ 예' : '☐ 아니오'}</span>
-                                            </td>
-                                            <td className="border border-black whitespace-pre-wrap" style={{verticalAlign: 'middle', padding: '6px 8px', lineHeight: 1.35, overflowWrap: 'anywhere'}}>{check.action || '-'}</td>
-                                        </tr>
-                                    )) : <tr><td colSpan="3" className="border border-black text-center text-gray-400" style={{padding: '8px 6px', lineHeight: 1.35}}>- 별도 기록 없음 -</td></tr>}
                                 </tbody>
                             </table>
                         </div>
                     </div>
-
-                    {riskChunks.slice(1).map((chunk, chunkIdx) => (
-                        <div
-                            key={`risk-page-${chunkIdx}`}
-                            ref={(node) => { pageRefs.current[chunkIdx + 1] = node; }}
-                            className="pdf-doc bg-white p-8 text-black w-[210mm] min-h-[297mm] text-sm leading-relaxed border border-gray-300 font-sans"
-                            style={{ boxSizing: 'border-box' }}
-                        >
-                            <h1 className="text-2xl font-bold text-center mb-8 pb-4 border-b-2 border-black"><span style={{display:'block',fontSize:'0.46em',fontWeight:700,letterSpacing:'0.28em',marginBottom:'6px'}}>{COMPANY_NAME}</span>Tool Box Meeting 회의록</h1>
-                            <div className="mb-6">
-                                <h4 className="font-bold mb-2 border-l-4 border-black pl-2">1. 위험요인 및 대책 (계속)</h4>
-                                <table className="w-full border-collapse border border-black text-sm table-fixed" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', borderSpacing: 0 }}>
-                                    <thead>
-                                        <tr className="bg-gray-100">
-                                            <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '10%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">No</span></th>
-                                            <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '45%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">잠재위험요인</span></th>
-                                            <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '45%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">안전대책</span></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {chunk.map((r, i) => (
-                                            <tr key={i}>
-                                                <td className="border border-black text-center align-middle" style={{verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.35}}>{8 * (chunkIdx + 1) + i + 1}</td>
-                                                <td className="border border-black whitespace-pre-wrap" style={{verticalAlign: 'middle', padding: '6px 8px', lineHeight: 1.35, overflowWrap: 'anywhere'}}><span className="pdf-body-text">{r.factor}</span></td>
-                                                <td className="border border-black whitespace-pre-wrap" style={{verticalAlign: 'middle', padding: '6px 8px', lineHeight: 1.35, overflowWrap: 'anywhere'}}><span className="pdf-body-text">{r.measure}</span></td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    ))}
-
-                    {safetyChunks.slice(1).map((chunk, chunkIdx) => (
-                        <div
-                            key={`safety-page-${chunkIdx}`}
-                            ref={(node) => { pageRefs.current[riskChunks.length + chunkIdx] = node; }}
-                            className="pdf-doc bg-white p-8 text-black w-[210mm] min-h-[297mm] text-sm leading-relaxed border border-gray-300 font-sans"
-                            style={{ boxSizing: 'border-box' }}
-                        >
-                            <h1 className="text-2xl font-bold text-center mb-8 pb-4 border-b-2 border-black"><span style={{display:'block',fontSize:'0.46em',fontWeight:700,letterSpacing:'0.28em',marginBottom:'6px'}}>{COMPANY_NAME}</span>Tool Box Meeting 회의록</h1>
-                            <div className="mb-6">
-                                <h4 className="font-bold mb-2 border-l-4 border-black pl-2">2. 작업 전 안전조치 확인 (계속)</h4>
-                                <table className="w-full border-collapse border border-black text-sm table-fixed" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', borderSpacing: 0 }}>
-                                    <thead>
-                                        <tr className="bg-gray-100">
-                                            <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '50%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">잠재위험요소(중점위험 포함)</span></th>
-                                            <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '20%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">조치여부</span></th>
-                                            <th className="pdf-header-cell border border-black text-center align-middle" style={{width: '30%', verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">'아니오'인 경우 조치내용</span></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {chunk.map((check, i) => (
-                                            <tr key={i}>
-                                                <td className="border border-black whitespace-pre-wrap" style={{verticalAlign: 'middle', padding: '6px 8px', lineHeight: 1.35, overflowWrap: 'anywhere'}}><span className="pdf-body-text">{check.risk}</span></td>
-                                                <td className="border border-black text-center align-middle" style={{verticalAlign: 'middle', padding: '6px 4px', lineHeight: 1.35}}>
-                                                    <span className="pdf-body-text">{check.result === 'yes' ? '☑ 예' : '☐ 아니오'}</span>
-                                                </td>
-                                                <td className="border border-black whitespace-pre-wrap" style={{verticalAlign: 'middle', padding: '6px 8px', lineHeight: 1.35, overflowWrap: 'anywhere'}}>{check.action || '-'}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    ))}
-
-                    {attendeeChunks.map((chunk, chunkIdx) => (
-                        <div
-                            key={`attendee-page-${chunkIdx}`}
-                            ref={(node) => { pageRefs.current[riskChunks.length + safetyChunks.length - 1 + chunkIdx] = node; }}
-                            className="pdf-doc bg-white p-8 text-black w-[210mm] min-h-[297mm] text-sm leading-relaxed border border-gray-300 font-sans"
-                            style={{ boxSizing: 'border-box' }}
-                        >
-                            <h1 className="text-2xl font-bold text-center mb-8 pb-4 border-b-2 border-black"><span style={{display:'block',fontSize:'0.46em',fontWeight:700,letterSpacing:'0.28em',marginBottom:'6px'}}>{COMPANY_NAME}</span>Tool Box Meeting 회의록</h1>
-                            {chunkIdx === 0 && (
-                                <div className="mb-6">
-                                    <h4 className="font-bold mb-2 border-l-4 border-black pl-2">3. 작업 전 일일 안전점검 시행 결과</h4>
-                                    <div className="border border-black p-2 min-h-[50px] whitespace-pre-wrap">
-                                        {tbm.dailyCheckResult || '특이사항 없음'}
-                                    </div>
-                                </div>
-                            )}
-
-                            {chunkIdx === 0 && tbm.photoUrl && (
-                                <div className="mb-6">
-                                    <h4 className="font-bold mb-2 border-l-4 border-black pl-2">4. TBM 활동 사진</h4>
-                                    <div className="border border-black p-2 flex justify-center">
-                                        <img src={tbm.photoUrl} alt="활동사진" className="max-h-60 object-contain" />
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="break-inside-avoid">
-                                <h4 className="font-bold mb-2 border-l-4 border-black pl-2">5. 참석자 명단 (총 {tbm.attendees?.length || 0}명){chunkIdx > 0 ? ' - 계속' : ''}</h4>
-                                <table className="w-full border-collapse border-2 border-black table-fixed text-sm" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', borderSpacing: 0 }}>
-                                    <thead>
-                                        <tr className="bg-gray-100">
-                                            <th className="pdf-header-cell border border-black text-center" style={{width: '25%', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">이름</span></th>
-                                            <th className="pdf-header-cell border border-black text-center" style={{width: '25%', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">서명</span></th>
-                                            <th className="pdf-header-cell border border-black text-center" style={{width: '25%', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">이름</span></th>
-                                            <th className="pdf-header-cell border border-black text-center" style={{width: '25%', padding: '6px 4px', lineHeight: 1.3}}><span className="pdf-header-text">서명</span></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {chunk[0] ? chunk.map((pair, i) => {
-                                            const left = pair[0];
-                                            const right = pair[1];
-                                            return (
-                                                <tr key={i}>
-                                                    <td className="border border-black h-16 align-middle text-center font-bold whitespace-pre-wrap break-words" style={{padding: '6px 8px', verticalAlign: 'middle', lineHeight: 1.35}}>{left?.name || '-'}</td>
-                                                    <td className="border border-black h-16 align-middle text-center" style={{padding: '4px', verticalAlign: 'middle', lineHeight: 1.35}}>
-                                                        {left?.isLeader ? (
-                                                            left?.signatureUrl
-                                                                ? <img src={left.signatureUrl} alt="서명" className="max-h-12 max-w-full object-contain mx-auto" />
-                                                                : <span className="text-red-500 text-xs font-bold">(리더 미서명)</span>
-                                                        ) : (
-                                                            <span className="text-gray-500 text-xs">서명 생략(대표자 확인)</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="border border-black h-16 align-middle text-center font-bold whitespace-pre-wrap break-words" style={{padding: '6px 8px', verticalAlign: 'middle', lineHeight: 1.35}}>{right?.name || ''}</td>
-                                                    <td className="border border-black h-16 align-middle text-center" style={{padding: '4px', verticalAlign: 'middle', lineHeight: 1.35}}>
-                                                        {right ? (
-                                                            right?.isLeader
-                                                                ? (right?.signatureUrl
-                                                                    ? <img src={right.signatureUrl} alt="서명" className="max-h-12 max-w-full object-contain mx-auto" />
-                                                                    : <span className="text-red-500 text-xs font-bold">(리더 미서명)</span>)
-                                                                : <span className="text-gray-500 text-xs">서명 생략(대표자 확인)</span>
-                                                        ) : ''}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        }) : (
-                                            <tr>
-                                                <td colSpan="4" className="border border-black text-center text-gray-400" style={{padding: '12px 8px', lineHeight: 1.35}}>
-                                                    참석자 기록 없음
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    ))}
                 </div>
             );
         };
@@ -1097,7 +1006,8 @@
             const [newYear, setNewYear] = useState('');
 
             const handleAddYear = async () => {
-                if (!newYear || availableYears.includes(newYear)) return;
+                if (!/^20\d{2}$/.test(newYear)) return alert("2000~2099 사이의 4자리 연도를 입력하세요.");
+                if (availableYears.includes(newYear)) return;
                 const updated = [...availableYears, newYear].sort();
                 setAvailableYears(updated);
                 await setDoc(doc(db, "system_settings", "config"), { years: updated });
@@ -1106,6 +1016,7 @@
 
             const handleRemoveYear = async (year) => {
                 if (availableYears.length <= 1) return alert("최소 1개의 연도는 필요합니다.");
+                if (!confirm(`${year}년을 조회 연도에서 빼시겠습니까? (기록은 지워지지 않습니다)`)) return;
                 const updated = availableYears.filter(y => y !== year);
                 setAvailableYears(updated);
                 await setDoc(doc(db, "system_settings", "config"), { years: updated });
@@ -1235,7 +1146,7 @@
                 const currentYearTbms = tbms.filter(t => String(t.date || '').startsWith(currentYear));
                 const departments = Array.from(new Set(currentYearTbms.map(t => t.department).filter(Boolean)));
                 const submittedDeptCount = departments.length;
-                const noActionRiskCount = currentYearTbms.reduce((acc, tbm) => acc + (tbm.risks || []).filter(r => (r.result || 'yes') === 'no').length, 0);
+                const noActionRiskCount = currentYearTbms.reduce((acc, tbm) => acc + (tbm.risks || []).filter(r => (r.result || 'yes') === 'no' && !r.resolvedAt).length, 0);
                 const todayStr = getLocalDateInputValue();
                 const todayCount = currentYearTbms.filter(t => t.date === todayStr).length;
                 const now = new Date();
@@ -1573,7 +1484,8 @@
 
             const handleCreateAccount = async () => {
                 if (user?.role !== 'master') return showToast('관리자만 계정을 생성할 수 있습니다.', 'error');
-                if(!newAcc.username || !newAcc.password) return showToast('정보를 입력하세요', 'error');
+                if(!newAcc.username.trim() || !newAcc.password || !newAcc.department.trim()) return showToast('아이디·비밀번호·부서명을 입력하세요', 'error');
+                if (accounts.some(a => String(a.username || '').trim().toLowerCase() === newAcc.username.trim().toLowerCase())) return showToast('이미 있는 아이디입니다.', 'error');
                 try {
                     const passwordHash = await hashPassword(newAcc.password);
                     await addDoc(collection(db, "app_users"), {
@@ -1589,7 +1501,8 @@
             };
             const handleDeleteAccount = async (id) => {
                 if (user?.role !== 'master') return showToast('관리자만 계정을 삭제할 수 있습니다.', 'error');
-                if(confirm("삭제하시겠습니까?")) await deleteDoc(doc(db, "app_users", id));
+                const acc = accounts.find(a => a.id === id);
+                if(confirm(`${acc?.department || ""} (${acc?.username || ""}) 계정을 삭제하시겠습니까?`)) await deleteDoc(doc(db, "app_users", id));
             };
             const handleUpdatePassword = async (id) => {
                 if (user?.role !== 'master') return showToast('관리자만 비밀번호를 변경할 수 있습니다.', 'error');
@@ -1614,7 +1527,8 @@
                         <div className="space-y-4">
                             <input type="text" className="input-field" placeholder="아이디" value={newAcc.username} onChange={e=>setNewAcc({...newAcc, username: e.target.value})} />
                             <input type="password" className="input-field" placeholder="비밀번호" value={newAcc.password} onChange={e=>setNewAcc({...newAcc, password: e.target.value})} />
-                            <input type="text" className="input-field" placeholder="부서명" value={newAcc.department} onChange={e=>setNewAcc({...newAcc, department: e.target.value})} />
+                            <input type="text" list="deptList" className="input-field" placeholder="부서명 (기존 부서는 목록에서 선택)" value={newAcc.department} onChange={e=>setNewAcc({...newAcc, department: e.target.value})} />
+                            <datalist id="deptList">{Array.from(new Set(accounts.map(a => a.department).filter(Boolean))).map(d => <option key={d} value={d} />)}</datalist>
                             <select className="input-field" value={newAcc.role} onChange={e=>setNewAcc({...newAcc, role: e.target.value})}>
                                 <option value="user">사용자</option>
                                 <option value="master">관리자</option>
@@ -1648,9 +1562,14 @@
             );
         };
 
+        const RISK_LEVELS = ['상', '중', '하'];
+        const newRiskRow = (id) => ({ id, factor: '', level: '', measure: '', result: 'yes', action: '', dueDate: '', owner: '' });
+        const newAttendee = (isLeader = false) => ({ name: '', affiliation: 'own', company: '', signed: false, signatureUrl: '', isLeader });
+
         const TBMFormView = ({ user, setView, showToast, setLoading, initialData }) => {
             const [form, setForm] = useState(initialData || {
                 date: getLocalDateInputValue(),
+                tbmTime: getLocalTimeValue(),
                 startTime: '08:30',
                 endTime: '17:30',
                 temperature: '',
@@ -1658,17 +1577,16 @@
                 workName: '',
                 workDesc: '',
                 location: '',
-                riskAssessmentDone: false,
-                risks: [{ id: 1, factor: '', measure: '', result: 'yes', action: '' }],
+                risks: [newRiskRow(1)],
                 keyRiskId: '',
-                leader: user.username,
+                leader: '',
                 preChecks: { check1: false, check2: false, check3: false },
                 safetyActionChecks: [],
-                preJobBriefingDone: true,
-                preJobBriefingAction: '',
+                workerRules: '',
+                workerFeedback: '',
                 dailyCheckResult: '특이사항 없음',
                 photoUrl: '',
-                attendees: [{ name: user.username || '', signed: false, signatureUrl: '', isLeader: true }]
+                attendees: [newAttendee(true)]
             });
             const [showSignModal, setShowSignModal] = useState(false);
             const [currentSignerIndex, setCurrentSignerIndex] = useState(null);
@@ -1682,33 +1600,38 @@
             });
             const [autoSaveState, setAutoSaveState] = useState('idle');
             const [lastAutoSavedAt, setLastAutoSavedAt] = useState('');
-            const [draftRestored, setDraftRestored] = useState(false);
-            const [didAutoLoadPrevious, setDidAutoLoadPrevious] = useState(false);
             const [validationErrors, setValidationErrors] = useState([]);
             const [sectionOpen, setSectionOpen] = useState({
                 overview: true,
                 risks: false,
+                share: false,
                 checks: false,
                 attendees: false
             });
             const workNameRef = useRef(null);
             const locationRef = useRef(null);
+            const tbmTimeRef = useRef(null);
+            const risksRef = useRef(null);
+            const keyRiskRef = useRef(null);
+            const workerRulesRef = useRef(null);
             const leaderNameRef = useRef(null);
             const leaderSignatureRef = useRef(null);
-            const briefingDoneRef = useRef(null);
-            const briefingActionRef = useRef(null);
+            const attendeesRef = useRef(null);
             const draftKey = `tbm_draft_v2_${user.department}`;
+            const filledRisks = (form.risks || []).filter(r => String(r.factor || '').trim());
             const requiredCompletedCount = useMemo(() => {
                 const leader = (form.attendees || []).find(att => att.isLeader);
                 return [
                     !!form.workName?.trim(),
                     !!form.location?.trim(),
+                    !!form.workerRules?.trim(),
                     !!leader?.name?.trim(),
                     !!leader?.signatureUrl
                 ].filter(Boolean).length;
             }, [form]);
-            const progressPercent = Math.round((requiredCompletedCount / 4) * 100);
-            const isReadyToSave = requiredCompletedCount === 4;
+            const REQUIRED_TOTAL = 5;
+            const progressPercent = Math.round((requiredCompletedCount / REQUIRED_TOTAL) * 100);
+            const isReadyToSave = requiredCompletedCount === REQUIRED_TOTAL;
 
             useEffect(() => {
                 if (initialData) return;
@@ -1722,7 +1645,6 @@
                         return;
                     }
                     setForm(prev => ({ ...prev, ...saved }));
-                    setDraftRestored(true);
                     showToast("이전에 작성 중이던 내용을 불러왔습니다.", "info");
                 } catch (err) {
                     console.warn("임시저장 데이터 파싱 실패:", err);
@@ -1748,26 +1670,25 @@
             const toggleSection = (key) => {
                 setSectionOpen((prev) => ({ ...prev, [key]: !prev[key] }));
             };
+            const setField = (key, value) => setForm(p => ({ ...p, [key]: value }));
 
-            const addRiskRow = () => setForm(p => ({...p, risks: [...p.risks, { id: Date.now(), factor: '', measure: '', result: 'yes', action: '' }]}));
-            const updateRisk = (id, f, v) => setForm(p => ({...p, risks: p.risks.map(r => r.id===id ? {...r, [f]: v} : r)}));
-            const removeRisk = (id) => setForm(p => ({...p, risks: p.risks.filter(r => r.id !== id)}));
+            const addRiskRow = () => setForm(p => ({ ...p, risks: [...p.risks, newRiskRow(Date.now())] }));
+            const updateRisk = (id, f, v) => setForm(p => ({ ...p, risks: p.risks.map(r => r.id === id ? { ...r, [f]: v } : r) }));
+            const removeRisk = (id) => setForm(p => ({ ...p, risks: p.risks.filter(r => r.id !== id) }));
             const duplicateRiskRow = (id) => {
                 setForm((prev) => {
                     const idx = prev.risks.findIndex((r) => r.id === id);
                     if (idx < 0) return prev;
-                    const source = prev.risks[idx];
-                    const copy = { ...source, id: Date.now() + Math.floor(Math.random() * 1000) };
+                    const copy = { ...prev.risks[idx], id: Date.now() + Math.floor(Math.random() * 1000) };
                     const next = [...prev.risks];
                     next.splice(idx + 1, 0, copy);
                     return { ...prev, risks: next };
                 });
             };
-            const addAttendee = () => setForm(p => ({...p, attendees: [...p.attendees, { name: '', signed: false, signatureUrl: '', isLeader: false }]}));
+            const addAttendee = () => setForm(p => ({ ...p, attendees: [...p.attendees, newAttendee(false)] }));
 
             const removeAttendee = (idx) => {
-                const newAtt = form.attendees.filter((_, i) => i !== idx);
-                setForm({ ...form, attendees: newAtt });
+                setForm(p => ({ ...p, attendees: p.attendees.filter((_, i) => i !== idx) }));
                 if (currentSignerIndex !== null) {
                     if (currentSignerIndex === idx) {
                         setShowSignModal(false);
@@ -1778,14 +1699,12 @@
                 }
             };
 
-            const updateAttendee = (idx, name) => {
-                const newAtt = [...form.attendees];
-                newAtt[idx].name = name;
-                setForm({...form, attendees: newAtt});
+            const updateAttendee = (idx, key, value) => {
+                setForm(p => ({ ...p, attendees: p.attendees.map((a, i) => i === idx ? { ...a, [key]: value } : a) }));
             };
             const openSignModal = (idx) => {
                 if (!form.attendees[idx].name) return showToast("이름을 먼저 입력하세요.", "error");
-                if (!form.attendees[idx].isLeader) return showToast("참석자는 대표자 확인으로 서명을 생략합니다.", "info");
+                if (!form.attendees[idx].isLeader) return showToast("참석자는 리더 확인으로 서명을 갈음합니다.", "info");
                 setCurrentSignerIndex(idx);
                 setShowSignModal(true);
             };
@@ -1796,10 +1715,8 @@
                     setCurrentSignerIndex(null);
                     return;
                 }
-                const newAtt = [...form.attendees];
-                newAtt[currentSignerIndex].signed = true;
-                newAtt[currentSignerIndex].signatureUrl = dataUrl;
-                setForm({ ...form, attendees: newAtt });
+                updateAttendee(currentSignerIndex, 'signatureUrl', dataUrl);
+                updateAttendee(currentSignerIndex, 'signed', true);
                 setCurrentSignerIndex(null);
             };
 
@@ -1812,23 +1729,13 @@
                         action: r.result === 'no' ? (r.action || '') : ''
                     }));
             };
-            const applyQuickDefaults = () => {
-                setForm((cur) => ({
-                    ...cur,
-                    temperature: cur.temperature || '25',
-                    humidity: cur.humidity || '50',
-                    dailyCheckResult: cur.dailyCheckResult || '특이사항 없음',
-                    preChecks: { check1: true, check2: true, check3: true }
-                }));
-                showToast("기본값을 빠르게 입력했습니다.", "success");
-            };
             const fillNoIssueTemplate = () => {
                 setForm((cur) => ({
                     ...cur,
                     workDesc: cur.workDesc || '금일 작업 전 TBM 시행, 특이사항 없음.',
                     dailyCheckResult: '특이사항 없음'
                 }));
-                showToast("무특이 템플릿을 적용했습니다.", "info");
+                showToast("무특이 문구를 넣었습니다.", "info");
             };
             const toggleCopyOption = (key) => {
                 setCopyOptions((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -1836,20 +1743,20 @@
             const normalizeAttendees = (arr) => {
                 const next = (arr || []).map((a) => ({
                     name: a.name || '',
-                    signed: !!a.signed,
-                    signatureUrl: a.signatureUrl || '',
+                    affiliation: a.affiliation === 'sub' ? 'sub' : 'own',
+                    company: a.company || '',
+                    signed: false,
+                    signatureUrl: '',
                     isLeader: !!a.isLeader
                 }));
-                if (!next.length) {
-                    return [{ name: user.username || '', signed: false, signatureUrl: '', isLeader: true }];
-                }
+                if (!next.length) return [newAttendee(true)];
                 next[0].isLeader = true;
                 for (let i = 1; i < next.length; i++) next[i].isLeader = false;
                 return next;
             };
 
-            const handleLoadPrevious = async (opts = {}) => {
-                const { silent = false } = opts;
+            // 전주 복사는 버튼으로만 (자동 복사 없음). 조치여부는 오늘 다시 확인하도록 '예'로 초기화
+            const handleLoadPrevious = async () => {
                 try {
                     setLoading(true);
                     const q = query(
@@ -1863,25 +1770,13 @@
                         .find(d => !initialData || d.id !== initialData.id);
 
                     if (!prev) {
-                        if (!silent) showToast("복사할 이전 TBM 데이터가 없습니다.", "info");
+                        showToast("복사할 이전 TBM 데이터가 없습니다.", "info");
                         return;
                     }
 
-                    const legacyActionMap = {};
-                    (prev.safetyActionChecks || []).forEach((a) => {
-                        if (!a?.risk) return;
-                        legacyActionMap[a.risk] = { result: a.result || 'yes', action: a.action || '' };
-                    });
-                    const copiedRisks = (prev.risks || [{ factor: '', measure: '' }]).map((r, i) => {
-                        const legacy = legacyActionMap[r.factor] || {};
-                        return {
-                            id: Date.now() + i,
-                            factor: r.factor || '',
-                            measure: r.measure || '',
-                            result: r.result || legacy.result || 'yes',
-                            action: r.action || legacy.action || ''
-                        };
-                    });
+                    const copiedRisks = (prev.risks || [])
+                        .filter(r => String(r.factor || '').trim())
+                        .map((r, i) => ({ ...newRiskRow(Date.now() + i), factor: r.factor || '', level: r.level || '', measure: r.measure || '' }));
 
                     setForm((cur) => ({
                         ...cur,
@@ -1891,36 +1786,23 @@
                             location: prev.location || ''
                         } : {}),
                         ...(copyOptions.risks ? {
-                            riskAssessmentDone: !!prev.riskAssessmentDone,
-                            risks: copiedRisks,
-                            keyRiskId: ''
+                            risks: copiedRisks.length ? copiedRisks : [newRiskRow(Date.now())],
+                            keyRiskId: '',
+                            workerRules: prev.workerRules || ''
                         } : {}),
                         ...(copyOptions.checks ? {
-                            preChecks: prev.preChecks || { check1: false, check2: false, check3: false },
-                            preJobBriefingDone: prev.preJobBriefingDone ?? true,
-                            preJobBriefingAction: prev.preJobBriefingAction || '',
                             dailyCheckResult: prev.dailyCheckResult || '특이사항 없음'
                         } : {}),
-                        ...(copyOptions.attendees ? {
-                            attendees: normalizeAttendees(prev.attendees)
-                        } : {
-                            attendees: normalizeAttendees(cur.attendees)
-                        })
+                        attendees: normalizeAttendees(copyOptions.attendees ? prev.attendees : cur.attendees)
                     }));
-                    if (!silent) showToast("전주 주요 내용을 복사했습니다. 날짜/시간만 확인 후 저장하세요.", "success");
+                    showToast("전주 내용을 복사했습니다. 오늘 상황에 맞게 확인 후 저장하세요.", "success");
                 } catch (err) {
                     console.error("전주 내용 복사 실패:", err);
-                    if (!silent) showToast("이전 데이터 복사 중 오류가 발생했습니다.", "error");
+                    showToast("이전 데이터 복사 중 오류가 발생했습니다.", "error");
                 } finally {
                     setLoading(false);
                 }
             };
-
-            useEffect(() => {
-                if (initialData || draftRestored || didAutoLoadPrevious) return;
-                setDidAutoLoadPrevious(true);
-                handleLoadPrevious({ silent: true });
-            }, [initialData, draftRestored, didAutoLoadPrevious]);
 
             const compressImageFile = (file) => new Promise((resolve, reject) => {
                 const img = new Image();
@@ -1969,32 +1851,52 @@
                 const map = {
                     workName: workNameRef,
                     location: locationRef,
+                    tbmTime: tbmTimeRef,
+                    workTime: tbmTimeRef,
+                    env: tbmTimeRef,
+                    risks: risksRef,
+                    keyRisk: keyRiskRef,
+                    workerRules: workerRulesRef,
                     leaderName: leaderNameRef,
                     leaderSignature: leaderSignatureRef,
-                    briefingDone: briefingDoneRef,
-                    briefingAction: briefingActionRef
+                    attendees: attendeesRef
                 };
                 const target = map[key]?.current;
                 if (!target) return;
                 setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
             };
 
+            const outOfRange = (v, min, max) => v !== '' && v != null && (Number(v) < min || Number(v) > max || Number.isNaN(Number(v)));
+
             const handleSubmit = async () => {
                 if (submitting) return;
                 const nextErrors = [];
+                if (!form.tbmTime) nextErrors.push({ key: 'tbmTime', label: 'TBM 실시 시각' });
+                if (form.startTime && form.endTime && form.endTime <= form.startTime) nextErrors.push({ key: 'workTime', label: '작업 시간(종료가 시작보다 늦어야 함)' });
+                if (outOfRange(form.temperature, -30, 50) || outOfRange(form.humidity, 0, 100)) nextErrors.push({ key: 'env', label: '온도(-30~50℃)·습도(0~100%) 범위' });
                 if (!form.workName?.trim()) nextErrors.push({ key: 'workName', label: '작업명' });
                 if (!form.location?.trim()) nextErrors.push({ key: 'location', label: '장소' });
-                if (form.preJobBriefingDone === false && !String(form.preJobBriefingAction || '').trim()) {
-                    nextErrors.push({ key: 'briefingAction', label: '작업 전 공유/교육 미실시 사유+즉시조치' });
-                }
+
+                const badRows = [];
+                (form.risks || []).forEach((r, i) => {
+                    if (!String(r.factor || '').trim()) return;
+                    const no = (r.result || 'yes') === 'no';
+                    if (!r.level || !String(r.measure || '').trim() || (no && (!String(r.action || '').trim() || !r.dueDate || !String(r.owner || '').trim()))) badRows.push(i + 1);
+                });
+                if (!filledRisks.length) nextErrors.push({ key: 'risks', label: '위험요인 1건 이상' });
+                if (badRows.length) nextErrors.push({ key: 'risks', label: `위험요인 ${badRows.join('·')}번 행(위험성·대책, 미조치면 잠정조치·기한·담당)` });
+                if (filledRisks.length && !filledRisks.some(r => String(r.id) === String(form.keyRiskId))) nextErrors.push({ key: 'keyRisk', label: '중점 위험요인 선택' });
+                if (!form.workerRules?.trim()) nextErrors.push({ key: 'workerRules', label: '근로자 준수·주의사항' });
+
                 const leader = (form.attendees || []).find(att => att.isLeader);
                 if (!leader || !leader.name?.trim()) nextErrors.push({ key: 'leaderName', label: '리더 이름' });
                 if (!leader?.signatureUrl) nextErrors.push({ key: 'leaderSignature', label: '리더 서명' });
+                if ((form.attendees || []).some(a => a.name?.trim() && a.affiliation === 'sub' && !a.company?.trim())) nextErrors.push({ key: 'attendees', label: '협력사 참석자의 업체명' });
 
                 if (nextErrors.length) {
                     setValidationErrors(nextErrors);
-                    setSectionOpen((prev) => ({ ...prev, overview: true, checks: true, attendees: true }));
-                    showToast(`필수 입력 누락: ${nextErrors.map((e) => e.label).join(', ')}`, "info");
+                    setSectionOpen({ overview: true, risks: true, share: true, checks: true, attendees: true });
+                    showToast(`입력 확인 필요: ${nextErrors.map((e) => e.label).join(', ')}`, "info");
                     scrollToErrorField(nextErrors[0].key);
                     return;
                 }
@@ -2002,16 +1904,22 @@
                 setSubmitting(true);
                 setLoading(true);
                 try {
-                    const selectedRisk = form.risks.find(r => r.id == form.keyRiskId);
-                    const normalizedRisks = (form.risks || []).map((r) => ({
-                        ...r,
-                        result: r.result || 'yes',
-                        action: (r.result || 'yes') === 'no' ? (r.action || '') : ''
-                    }));
+                    // 빈 위험요인 행·빈 참석자 행은 저장하지 않는다
+                    const cleanedRisks = filledRisks.map((r) => {
+                        const no = (r.result || 'yes') === 'no';
+                        return { ...r, result: no ? 'no' : 'yes', action: no ? (r.action || '') : '', dueDate: no ? (r.dueDate || '') : '', owner: no ? (r.owner || '') : '' };
+                    });
+                    const cleanedAttendees = (form.attendees || [])
+                        .filter(a => a.isLeader || a.name?.trim())
+                        .map(a => ({ ...a, name: a.name.trim(), company: a.affiliation === 'sub' ? a.company.trim() : '' }));
+                    const selectedRisk = cleanedRisks.find(r => String(r.id) === String(form.keyRiskId));
                     const docData = {
                         ...form,
-                        risks: normalizedRisks,
-                        safetyActionChecks: buildSafetyActionChecksFromRisks(normalizedRisks),
+                        risks: cleanedRisks,
+                        attendees: cleanedAttendees,
+                        leader: leader.name.trim(),
+                        riskAssessmentDone: cleanedRisks.length > 0 && cleanedRisks.every(r => r.level),
+                        safetyActionChecks: buildSafetyActionChecksFromRisks(cleanedRisks),
                         department: user.department,
                         keyRiskFactor: selectedRisk ? selectedRisk.factor : 'N/A',
                         keyRiskMeasure: selectedRisk ? selectedRisk.measure : 'N/A',
@@ -2029,29 +1937,27 @@
                     if (!initialData) localStorage.removeItem(draftKey);
                     setView('list');
                 } catch (err) {
-                    showToast("오류 발생", "error");
+                    showToast("저장 중 오류가 발생했습니다. 사진이 너무 크면 다시 촬영해 주세요.", "error");
                 }
                 setLoading(false);
                 setSubmitting(false);
             };
 
-            const renderSectionTitle = (key, title, tone = 'gray') => {
-                const toneClass = 'text-slate-900 border-slate-200 bg-slate-50 hover:bg-slate-100';
-                return (
-                    <button type="button" onClick={() => toggleSection(key)} className={`w-full flex items-center justify-between h-12 px-4 rounded-lg border text-[15px] ${toneClass}`}>
-                        <span className="font-bold">{title}</span>
-                        <i className={`fas fa-chevron-${sectionOpen[key] ? 'up' : 'down'} text-xs text-slate-400`}></i>
-                    </button>
-                );
-            };
+            const renderSectionTitle = (key, title, note) => (
+                <button type="button" onClick={() => toggleSection(key)} className="w-full flex items-center justify-between gap-3 min-h-[48px] px-4 py-2 rounded-lg border text-[15px] text-slate-900 border-slate-200 bg-slate-50 hover:bg-slate-100 text-left">
+                    <span><span className="font-bold">{title}</span>{note && <span className="ml-2 text-xs font-normal text-slate-500">{note}</span>}</span>
+                    <i className={`fas fa-chevron-${sectionOpen[key] ? 'up' : 'down'} text-xs text-slate-400`}></i>
+                </button>
+            );
+            const segBtn = (active, tone = 'brand') => `h-9 rounded-md text-[13px] font-bold transition-colors ${active ? (tone === 'ok' ? 'bg-emerald-600 text-white' : tone === 'risk' ? 'bg-red-600 text-white' : 'bg-slate-900 text-white') : 'text-slate-600 hover:bg-white'}`;
 
             return (
                 <div className="tone-panel overflow-hidden w-full animate-fade-in-up">
-                    <SectionHero chip={user.department} title={initialData ? "TBM 수정" : "TBM 등록"} subtitle="작업 개요, 위험요인, 참석자 정보를 차례로 입력합니다." />
+                    <SectionHero chip={user.department} title={initialData ? "TBM 수정" : "TBM 등록"} subtitle="작업 전 안전점검회의에서 공유한 위험요인·대책·준수사항과 참석자를 기록합니다." />
                     <div className="p-4 sm:p-6 md:p-8 space-y-5">
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                             <div className="text-sm text-slate-600">
-                                필수 입력: <b className="text-slate-900">작업명·장소·리더 서명</b>
+                                필수 입력: <b className="text-slate-900">작업명·장소·위험요인·준수사항·리더 서명</b>
                                 <span className="ml-2 text-slate-500">임시저장 {autoSaveState === 'saving' ? '저장 중...' : autoSaveState === 'saved' ? `저장됨 · ${lastAutoSavedAt}` : autoSaveState === 'error' ? '실패' : '-'}</span>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
@@ -2070,16 +1976,14 @@
                                             <div className="font-bold mb-2 text-slate-900">전주 내용 복사 범위</div>
                                             <div className="grid grid-cols-2 gap-2">
                                                 <label className="flex items-center gap-2"><input type="checkbox" checked={copyOptions.overview} onChange={()=>toggleCopyOption('overview')} />작업개요</label>
-                                                <label className="flex items-center gap-2"><input type="checkbox" checked={copyOptions.risks} onChange={()=>toggleCopyOption('risks')} />위험성평가</label>
+                                                <label className="flex items-center gap-2"><input type="checkbox" checked={copyOptions.risks} onChange={()=>toggleCopyOption('risks')} />위험요인·준수사항</label>
                                                 <label className="flex items-center gap-2"><input type="checkbox" checked={copyOptions.checks} onChange={()=>toggleCopyOption('checks')} />점검결과</label>
                                                 <label className="flex items-center gap-2"><input type="checkbox" checked={copyOptions.attendees} onChange={()=>toggleCopyOption('attendees')} />참석자</label>
                                             </div>
+                                            <p className="mt-2 text-xs text-slate-500">조치여부·체크리스트·서명은 복사하지 않습니다.</p>
                                         </div>
                                     )}
                                 </div>
-                                <button onClick={applyQuickDefaults} className="btn btn-ghost !min-h-[36px] !px-3 text-[13px]">
-                                    <i className="fas fa-wand-magic-sparkles text-slate-400"></i>기본값
-                                </button>
                                 <button onClick={fillNoIssueTemplate} className="btn btn-ghost !min-h-[36px] !px-3 text-[13px]">
                                     <i className="fas fa-file-lines text-slate-400"></i>무특이
                                 </button>
@@ -2089,228 +1993,236 @@
                         <div className="kpi-strip" style={{ '--cols': 4 }}>
                             <div>
                                 <div className="kpi-label">필수 입력</div>
-                                <div className="kpi-value">{requiredCompletedCount}<span className="kpi-unit">/ 4</span></div>
+                                <div className="kpi-value">{requiredCompletedCount}<span className="kpi-unit">/ {REQUIRED_TOTAL}</span></div>
                                 <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                     <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${progressPercent}%` }}></div>
                                 </div>
                             </div>
-                            <div><div className="kpi-label">위험요인</div><div className="kpi-value">{(form.risks || []).filter(r => String(r.factor || '').trim()).length}<span className="kpi-unit">건</span></div><div className="kpi-note">입력된 잠재위험 기준</div></div>
+                            <div><div className="kpi-label">위험요인</div><div className="kpi-value">{filledRisks.length}<span className="kpi-unit">건</span></div><div className="kpi-note">미조치 {filledRisks.filter(r => (r.result || 'yes') === 'no').length}건</div></div>
                             <div><div className="kpi-label">점검 상태</div><div className="kpi-value">{Object.values(form.preChecks || {}).filter(Boolean).length}<span className="kpi-unit">/ 3</span></div><div className="kpi-note">체크리스트 완료 수</div></div>
-                            <div><div className="kpi-label">참석자</div><div className="kpi-value">{form.attendees.length}<span className="kpi-unit">명</span></div><div className="kpi-note">리더 1명 서명 필수</div></div>
+                            <div><div className="kpi-label">참석자</div><div className="kpi-value">{form.attendees.length}<span className="kpi-unit">명</span></div><div className="kpi-note">협력사 {form.attendees.filter(a => a.affiliation === 'sub').length}명</div></div>
                         </div>
 
                         {validationErrors.length > 0 && (
                             <div className="border border-red-200 bg-red-50 rounded-lg p-3 text-sm text-red-700">
                                 <div className="font-bold mb-1">입력 확인 필요</div>
-                                <div>{validationErrors.map((e) => e.label).join(', ')}</div>
+                                <ul className="list-disc pl-5 space-y-0.5">{validationErrors.map((e, i) => <li key={i}>{e.label}</li>)}</ul>
                             </div>
                         )}
 
                         <section className="space-y-3">
                             {renderSectionTitle('overview', '1. 작업 개요')}
                             {sectionOpen.overview && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border border-gray-100 rounded-lg p-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 border border-slate-200 rounded-lg p-4">
                                     <div>
-                                        <label className="label-text">일시</label>
-                                        <div className="flex gap-2 items-center flex-wrap">
-                                            <input type="date" className="input-field flex-grow" value={form.date} onChange={e=>setForm({...form, date:e.target.value})} />
-                                            <div className="flex items-center gap-1">
-                                                <input type="time" className="input-field w-24" value={form.startTime} onChange={e=>setForm({...form, startTime:e.target.value})} />
-                                                <span>~</span>
-                                                <input type="time" className="input-field w-24" value={form.endTime} onChange={e=>setForm({...form, endTime:e.target.value})} />
-                                            </div>
+                                        <label htmlFor="tbmDate" className="label-text">TBM 날짜 · 실시 시각</label>
+                                        <div className="flex gap-2">
+                                            <input id="tbmDate" type="date" className="input-field flex-1 min-w-0" value={form.date} onChange={e=>setField('date', e.target.value)} />
+                                            <input ref={tbmTimeRef} aria-label="TBM 실시 시각" type="time" className="input-field !w-[150px] shrink-0" value={form.tbmTime || ''} onChange={e=>setField('tbmTime', e.target.value)} />
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="label-text">장소</label>
-                                        <input ref={locationRef} type="text" className="input-field" value={form.location} onChange={e=>setForm({...form, location:e.target.value})} />
-                                    </div>
-                                    <div className="flex gap-4 md:col-span-2">
-                                        <div className="flex-1">
-                                            <label className="label-text">온도 (℃)</label>
-                                            <input type="number" inputMode="numeric" className="input-field" placeholder="예: 25" value={form.temperature} onChange={e=>setForm({...form, temperature:e.target.value})} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <label className="label-text">습도 (%)</label>
-                                            <input type="number" inputMode="numeric" className="input-field" placeholder="예: 50" value={form.humidity} onChange={e=>setForm({...form, humidity:e.target.value})} />
+                                        <label className="label-text">작업 시간</label>
+                                        <div className="flex items-center gap-2">
+                                            <input aria-label="작업 시작" type="time" className="input-field" value={form.startTime || ''} onChange={e=>setField('startTime', e.target.value)} />
+                                            <span className="text-slate-400">~</span>
+                                            <input aria-label="작업 종료" type="time" className="input-field" value={form.endTime || ''} onChange={e=>setField('endTime', e.target.value)} />
                                         </div>
                                     </div>
-                                    <div className="md:col-span-2"><label className="label-text">작업명</label><input ref={workNameRef} type="text" className="input-field" value={form.workName} onChange={e=>setForm({...form, workName:e.target.value})} /></div>
+                                    <div className="md:col-span-2"><label htmlFor="workName" className="label-text">작업명</label><input id="workName" ref={workNameRef} type="text" className="input-field" value={form.workName} onChange={e=>setField('workName', e.target.value)} /></div>
+                                    <div>
+                                        <label htmlFor="location" className="label-text">작업 장소</label>
+                                        <input id="location" ref={locationRef} type="text" className="input-field" value={form.location} onChange={e=>setField('location', e.target.value)} />
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1">
+                                            <label htmlFor="temperature" className="label-text">온도 (℃)</label>
+                                            <input id="temperature" type="number" inputMode="decimal" min="-30" max="50" className="input-field" placeholder="예: 25" value={form.temperature} onChange={e=>setField('temperature', e.target.value)} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label htmlFor="humidity" className="label-text">습도 (%)</label>
+                                            <input id="humidity" type="number" inputMode="numeric" min="0" max="100" className="input-field" placeholder="예: 50" value={form.humidity} onChange={e=>setField('humidity', e.target.value)} />
+                                        </div>
+                                    </div>
                                     <div className="md:col-span-2">
-                                        <label className="label-text flex items-center justify-between">내용</label>
-                                        <textarea className="input-field h-20" value={form.workDesc} onChange={e=>setForm({...form, workDesc:e.target.value})}></textarea>
+                                        <label htmlFor="workDesc" className="label-text">작업 내용</label>
+                                        <textarea id="workDesc" className="input-field h-20" value={form.workDesc} onChange={e=>setField('workDesc', e.target.value)}></textarea>
                                     </div>
                                 </div>
                             )}
                         </section>
 
                         <section className="space-y-3">
-                            {renderSectionTitle('risks', '2. 위험성 평가', 'yellow')}
+                            {renderSectionTitle('risks', '2. 위험요인 및 감소대책', '위험성평가 결과 공유')}
                             {sectionOpen.risks && (
-                                <div className="p-4 sm:p-6 rounded-lg border border-slate-200">
-                                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
-                                        <h3 className="text-base font-bold text-slate-900">위험성 평가 입력</h3>
-                                        <div className="flex items-center gap-1 rounded-full bg-slate-100 p-1">
-                                            <button type="button" onClick={() => setForm({ ...form, riskAssessmentDone: true })} className={`px-4 h-8 text-[13px] rounded-full font-bold ${form.riskAssessmentDone ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>실시</button>
-                                            <button type="button" onClick={() => setForm({ ...form, riskAssessmentDone: false })} className={`px-4 h-8 text-[13px] rounded-full font-bold ${!form.riskAssessmentDone ? 'bg-slate-700 text-white' : 'text-slate-600'}`}>미실시</button>
-                                        </div>
+                                <div ref={risksRef} className="p-4 sm:p-5 rounded-lg border border-slate-200 space-y-3">
+                                    <p className="text-sm text-slate-600">오늘 작업의 유해·위험요인과 위험성(상·중·하), 감소대책을 적습니다. 조치가 안 된 요인은 <b className="text-slate-800">잠정조치·기한·담당자</b>를 함께 적습니다.</p>
+                                    <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-bold text-slate-500 px-3">
+                                        <div className="col-span-1">No</div>
+                                        <div className="col-span-3">유해·위험요인</div>
+                                        <div className="col-span-2">위험성</div>
+                                        <div className="col-span-3">감소대책</div>
+                                        <div className="col-span-2">조치여부</div>
+                                        <div className="col-span-1 text-center">관리</div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-bold text-gray-500 text-center mb-1">
-                                            <div className="col-span-1">No</div>
-                                            <div className="col-span-3">잠재위험요인</div>
-                                            <div className="col-span-3">안전대책</div>
-                                            <div className="col-span-2">조치여부</div>
-                                            <div className="col-span-2">'아니오' 사유</div>
-                                            <div className="col-span-1">관리</div>
-                                        </div>
-                                        {form.risks.map((risk, idx) => (
-                                            <div key={risk.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center bg-white p-3 rounded-lg border border-slate-200">
-                                                <div className="md:col-span-1 text-center font-bold bg-gray-100 rounded-full w-7 h-7 leading-7 mx-auto md:mx-0">{idx+1}</div>
-                                                <div className="md:col-span-3">
-                                                    <label className="md:hidden block text-xs font-bold text-gray-500 mb-1">잠재위험요인</label>
-                                                    <input type="text" className="input-field py-1 text-sm" placeholder="위험요인" value={risk.factor} onChange={e=>updateRisk(risk.id, 'factor', e.target.value)} />
-                                                </div>
-                                                <div className="md:col-span-3">
-                                                    <label className="md:hidden block text-xs font-bold text-gray-500 mb-1">안전대책</label>
-                                                    <input type="text" className="input-field py-1 text-sm" placeholder="대책" value={risk.measure} onChange={e=>updateRisk(risk.id, 'measure', e.target.value)} />
-                                                </div>
-                                                <div className="md:col-span-2">
-                                                    <label className="md:hidden block text-xs font-bold text-gray-500 mb-1">조치여부</label>
-                                                    <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
-                                                        <button type="button" onClick={() => updateRisk(risk.id, 'result', 'yes')} className={`px-2 py-2 rounded-lg text-xs font-bold ${(risk.result || 'yes') === 'yes' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600'}`}>예</button>
-                                                        <button type="button" onClick={() => updateRisk(risk.id, 'result', 'no')} className={`px-2 py-2 rounded-lg text-xs font-bold ${(risk.result || 'yes') === 'no' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-600'}`}>아니오</button>
+                                    {form.risks.map((risk, idx) => {
+                                        const no = (risk.result || 'yes') === 'no';
+                                        return (
+                                            <div key={risk.id} className={`rounded-lg border p-3 ${no ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'}`}>
+                                                <div className="grid grid-cols-1 md:grid-cols-12 gap-2 md:items-center">
+                                                    <div className="md:col-span-1 font-bold text-slate-500 tnum">{idx + 1}</div>
+                                                    <div className="md:col-span-3">
+                                                        <label className="label-text md:!hidden">유해·위험요인</label>
+                                                        <input type="text" className="input-field" placeholder="예: 지게차 충돌" value={risk.factor} onChange={e=>updateRisk(risk.id, 'factor', e.target.value)} />
+                                                    </div>
+                                                    <div className="md:col-span-2">
+                                                        <label className="label-text md:!hidden">위험성</label>
+                                                        <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
+                                                            {RISK_LEVELS.map(lv => (
+                                                                <button key={lv} type="button" onClick={() => updateRisk(risk.id, 'level', lv)} className={segBtn(risk.level === lv, lv === '상' ? 'risk' : 'brand')}>{lv}</button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="md:col-span-3">
+                                                        <label className="label-text md:!hidden">감소대책</label>
+                                                        <input type="text" className="input-field" placeholder="예: 유도자 배치" value={risk.measure} onChange={e=>updateRisk(risk.id, 'measure', e.target.value)} />
+                                                    </div>
+                                                    <div className="md:col-span-2">
+                                                        <label className="label-text md:!hidden">조치여부</label>
+                                                        <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+                                                            <button type="button" onClick={() => updateRisk(risk.id, 'result', 'yes')} className={segBtn(!no, 'ok')}>조치</button>
+                                                            <button type="button" onClick={() => updateRisk(risk.id, 'result', 'no')} className={segBtn(no, 'risk')}>미조치</button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="md:col-span-1 flex md:justify-center gap-1">
+                                                        <button onClick={()=>duplicateRiskRow(risk.id)} aria-label="행 복제" title="행 복제" className="w-10 h-10 rounded-lg text-slate-500 hover:bg-slate-100"><i className="fas fa-clone"></i></button>
+                                                        <button onClick={()=>removeRisk(risk.id)} aria-label="행 삭제" title="행 삭제" className="w-10 h-10 rounded-lg text-slate-500 hover:bg-slate-100"><i className="fas fa-xmark"></i></button>
                                                     </div>
                                                 </div>
-                                                <div className="md:col-span-2">
-                                                    <label className="md:hidden block text-xs font-bold text-gray-500 mb-1">'아니오' 사유</label>
-                                                    <input type="text" className="input-field py-1 text-xs" placeholder="미조치 사유" value={risk.action || ''} onChange={e=>updateRisk(risk.id, 'action', e.target.value)} disabled={(risk.result || 'yes') === 'yes'} />
-                                                </div>
-                                                <div className="md:col-span-1 text-center flex md:block gap-1 justify-center">
-                                                    <button onClick={()=>duplicateRiskRow(risk.id)} className="text-blue-500 px-2 py-1 border rounded md:border-0 text-xs"><i className="fas fa-clone mr-1 md:mr-0"></i><span className="md:hidden">복제</span></button>
-                                                    <button onClick={()=>removeRisk(risk.id)} className="text-red-400 px-2 py-1 border rounded md:border-0 text-xs"><i className="fas fa-times mr-1 md:mr-0"></i><span className="md:hidden">삭제</span></button>
-                                                </div>
+                                                {no && (
+                                                    <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-2">
+                                                        <div className="md:col-span-6"><label className="label-text">잠정조치 · 미조치 사유</label><input type="text" className="input-field" placeholder="예: 유도자 부재 → 통로 출입 통제" value={risk.action || ''} onChange={e=>updateRisk(risk.id, 'action', e.target.value)} /></div>
+                                                        <div className="md:col-span-3"><label className="label-text">조치 기한</label><input type="date" className="input-field" value={risk.dueDate || ''} onChange={e=>updateRisk(risk.id, 'dueDate', e.target.value)} /></div>
+                                                        <div className="md:col-span-3"><label className="label-text">담당자</label><input type="text" className="input-field" placeholder="이름" value={risk.owner || ''} onChange={e=>updateRisk(risk.id, 'owner', e.target.value)} /></div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        ))}
-                                        <button onClick={addRiskRow} className="w-full py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded text-sm hover:bg-white">+ 위험요인 추가</button>
+                                        );
+                                    })}
+                                    <button onClick={addRiskRow} className="w-full h-11 border-2 border-dashed border-slate-300 text-slate-600 rounded-lg text-sm font-semibold hover:bg-slate-50">+ 위험요인 추가</button>
+                                    <div ref={keyRiskRef}>
+                                        <label htmlFor="keyRisk" className="label-text">중점 위험요인 <span className="font-normal text-slate-500">(중대재해로 이어질 수 있는 위험)</span></label>
+                                        <select id="keyRisk" className="input-field" value={form.keyRiskId} onChange={e=>setField('keyRiskId', e.target.value)}>
+                                            <option value="">선택하세요</option>
+                                            {form.risks.map((r, i) => String(r.factor || '').trim() && (<option key={r.id} value={r.id}>{i + 1}. {r.factor}</option>))}
+                                        </select>
                                     </div>
-                                    <div className="mt-4"><label className="label-text">중점 위험요인 선택</label><select className="input-field" value={form.keyRiskId} onChange={e=>setForm({...form, keyRiskId: e.target.value})}><option value="">선택하세요</option>{form.risks.map((r,i)=>(<option key={r.id} value={r.id}>{i+1}. {r.factor}</option>))}</select></div>
                                 </div>
                             )}
                         </section>
 
                         <section className="space-y-3">
-                            {renderSectionTitle('checks', '3. 안전점검 및 점검결과')}
-                            {sectionOpen.checks && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border border-gray-100 rounded-lg p-4">
-                                    <div>
-                                        <h3 className="text-base font-bold text-slate-900 mb-3 pb-2 border-b border-slate-200">작업 전 안전 점검 (Checklist)</h3>
-                                        <div ref={briefingDoneRef} className="mb-4 p-3 border rounded-lg bg-slate-50 border-slate-200">
-                                            <div className="text-sm font-bold text-slate-900 mb-2">작업 전 공유/교육 실시 여부</div>
-                                            <div className="flex items-center gap-4">
-                                                <label className="flex items-center gap-1 text-sm">
-                                                    <input
-                                                        type="radio"
-                                                        name="preJobBriefingDone"
-                                                        checked={form.preJobBriefingDone === true}
-                                                        onChange={() => setForm({ ...form, preJobBriefingDone: true, preJobBriefingAction: '' })}
-                                                    />
-                                                    예
-                                                </label>
-                                                <label className="flex items-center gap-1 text-sm">
-                                                    <input
-                                                        type="radio"
-                                                        name="preJobBriefingDone"
-                                                        checked={form.preJobBriefingDone === false}
-                                                        onChange={() => setForm({ ...form, preJobBriefingDone: false })}
-                                                    />
-                                                    아니오
-                                                </label>
-                                            </div>
-                                            {form.preJobBriefingDone === false && (
-                                                <div className="mt-2">
-                                                    <label className="label-text text-red-600">미실시 사유 + 즉시조치 (필수)</label>
-                                                    <input
-                                                        ref={briefingActionRef}
-                                                        type="text"
-                                                        className="input-field"
-                                                        placeholder="예: 인원 미집결로 즉시 재소집 후 공유 완료"
-                                                        value={form.preJobBriefingAction || ''}
-                                                        onChange={(e) => setForm({ ...form, preJobBriefingAction: e.target.value })}
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="space-y-2 mb-6">
-                                            <label className="flex items-center min-h-[44px] px-3 border border-slate-200 rounded-lg bg-white cursor-pointer"><input type="checkbox" className="mr-2" checked={form.preChecks.check1} onChange={e=>setForm({...form, preChecks:{...form.preChecks, check1:e.target.checked}})} />보호구 착용</label>
-                                            <label className="flex items-center min-h-[44px] px-3 border border-slate-200 rounded-lg bg-white cursor-pointer"><input type="checkbox" className="mr-2" checked={form.preChecks.check2} onChange={e=>setForm({...form, preChecks:{...form.preChecks, check2:e.target.checked}})} />장비 점검</label>
-                                            <label className="flex items-center min-h-[44px] px-3 border border-slate-200 rounded-lg bg-white cursor-pointer"><input type="checkbox" className="mr-2" checked={form.preChecks.check3} onChange={e=>setForm({...form, preChecks:{...form.preChecks, check3:e.target.checked}})} />건강 상태</label>
-                                        </div>
-                                        <h3 className="text-base font-bold text-slate-900 mb-3 pb-2 border-b border-slate-200">작업 전 일일 안전점검 시행 결과</h3>
-                                        <textarea className="input-field h-[184px]" placeholder="특이사항 없음" value={form.dailyCheckResult} onChange={e=>setForm({...form, dailyCheckResult:e.target.value})}></textarea>
+                            {renderSectionTitle('share', '3. 근로자 공유사항')}
+                            {sectionOpen.share && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 border border-slate-200 rounded-lg p-4">
+                                    <div ref={workerRulesRef}>
+                                        <label htmlFor="workerRules" className="label-text">근로자 준수·주의사항 <span className="text-red-600">*</span></label>
+                                        <textarea id="workerRules" className="input-field h-28" placeholder={'예: 지게차 통로 횡단 금지\n세척 중 회전체 전원 차단 확인 후 작업'} value={form.workerRules || ''} onChange={e=>setField('workerRules', e.target.value)}></textarea>
                                     </div>
                                     <div>
-                                        <h3 className="text-base font-bold text-slate-900 mb-3 pb-2 border-b border-slate-200">TBM 활동 사진</h3>
-                                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition relative">
-                                            <input type="file" accept="image/*" onChange={handlePhotoUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                        <label htmlFor="workerFeedback" className="label-text">근로자 의견·아차사고</label>
+                                        <textarea id="workerFeedback" className="input-field h-28" placeholder="참석자가 말한 위험·개선 의견, 다칠 뻔한 일. 없으면 비워 둡니다." value={form.workerFeedback || ''} onChange={e=>setField('workerFeedback', e.target.value)}></textarea>
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+
+                        <section className="space-y-3">
+                            {renderSectionTitle('checks', '4. 작업 전 안전점검')}
+                            {sectionOpen.checks && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border border-slate-200 rounded-lg p-4">
+                                    <div>
+                                        <div className="label-text">점검 항목 <span className="font-normal text-slate-500">(직접 확인한 항목만 체크)</span></div>
+                                        <div className="space-y-2 mb-5">
+                                            {[['check1', '보호구 착용'], ['check2', '장비 점검'], ['check3', '건강 상태']].map(([k, label]) => (
+                                                <label key={k} className="flex items-center gap-2 min-h-[44px] px-3 border border-slate-200 rounded-lg bg-white cursor-pointer">
+                                                    <input type="checkbox" className="w-4 h-4" checked={!!form.preChecks?.[k]} onChange={e=>setField('preChecks', { ...form.preChecks, [k]: e.target.checked })} />{label}
+                                                </label>
+                                            ))}
+                                        </div>
+                                        <label htmlFor="dailyCheck" className="label-text">점검 결과</label>
+                                        <textarea id="dailyCheck" className="input-field h-28" placeholder="특이사항 없음" value={form.dailyCheckResult} onChange={e=>setField('dailyCheckResult', e.target.value)}></textarea>
+                                    </div>
+                                    <div>
+                                        <div className="label-text">TBM 활동 사진</div>
+                                        <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:bg-slate-50 transition relative">
+                                            <input type="file" accept="image/*" onChange={handlePhotoUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" aria-label="TBM 활동 사진 첨부" />
                                             {form.photoUrl ? (
                                                 <div className="space-y-3">
-                                                    <img src={form.photoUrl} alt="Preview" className="max-h-32 mx-auto rounded shadow" />
+                                                    <img src={form.photoUrl} alt="첨부 사진" className="max-h-32 mx-auto rounded" />
                                                     <div className="flex flex-wrap justify-center gap-2">
-                                                        <button type="button" onClick={() => setForm(prev => ({ ...prev, photoUrl: '' }))} className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg bg-white hover:bg-red-50 relative z-10">
-                                                            사진 삭제
-                                                        </button>
-                                                        <span className="text-xs text-gray-400 self-center">다시 클릭하면 새 사진으로 교체됩니다.</span>
+                                                        <button type="button" onClick={() => setField('photoUrl', '')} className="btn btn-ghost !min-h-[32px] text-xs !text-red-700 relative z-10">사진 삭제</button>
+                                                        <span className="text-xs text-slate-500 self-center">다시 누르면 새 사진으로 바뀝니다.</span>
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <div className="text-gray-400"><i className="fas fa-camera text-3xl mb-2"></i><br/>클릭하여 사진 촬영/업로드</div>
+                                                <div className="text-slate-500"><i className="fas fa-camera text-3xl mb-2"></i><br/>눌러서 사진 촬영·업로드</div>
                                             )}
                                         </div>
-                                        <div className="mt-2 text-xs text-gray-400">현장 사진은 압축 후 저장됩니다. 흐린 사진은 다시 촬영하는 편이 좋습니다.</div>
+                                        <div className="mt-2 text-xs text-slate-500">사진은 압축해서 저장합니다. 흐리면 다시 찍어 주세요.</div>
                                     </div>
                                 </div>
                             )}
                         </section>
 
                         <section className="space-y-3">
-                            {renderSectionTitle('attendees', `4. 참석자 (${form.attendees.length}명)`)}
+                            {renderSectionTitle('attendees', `5. 참석자 (${form.attendees.length}명)`)}
                             {sectionOpen.attendees && (
-                                <div className="border border-gray-100 rounded-lg p-4">
+                                <div ref={attendeesRef} className="border border-slate-200 rounded-lg p-4">
                                     <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3">
-                                        참석자 이름은 모두 기록하고, 서명은 리더 1명만 받습니다. 일반 참석자는 대표자 확인으로 서명을 생략합니다.
+                                        참석자 이름과 소속을 모두 적습니다. 서명은 리더 1명이 하고, 다른 참석자는 리더 확인으로 갈음합니다. 협력사 근로자는 업체명을 적습니다.
                                     </div>
-                                    <div className="bg-gray-50 p-4 rounded h-48 overflow-y-auto space-y-2 mb-3">
+                                    <div className="space-y-2 mb-3">
                                         {form.attendees.map((att, idx) => (
-                                            <div key={idx} className="flex items-center gap-2 bg-white p-2 rounded border shadow-sm">
-                                                <div className={`w-12 shrink-0 text-center px-1 py-1 rounded text-xs font-bold ${att.isLeader ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700'}`}>
-                                                    {att.isLeader ? '리더' : '참석'}
-                                                </div>
+                                            <div key={idx} className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-slate-200">
+                                                <span className={`w-11 shrink-0 text-center py-1 rounded text-xs font-bold ${att.isLeader ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}`}>{att.isLeader ? '리더' : '참석'}</span>
                                                 <input
                                                     ref={att.isLeader ? leaderNameRef : null}
                                                     type="text"
-                                                    placeholder={att.isLeader ? "리더 이름" : "참석자 이름"}
-                                                    className="border border-gray-300 rounded px-3 py-2 text-sm w-20 sm:w-28 md:w-32 shrink-0 text-center font-bold outline-none focus:ring-2 focus:ring-indigo-500 h-12"
+                                                    aria-label={att.isLeader ? '리더 이름' : '참석자 이름'}
+                                                    placeholder={att.isLeader ? "리더 이름" : "이름"}
+                                                    className="input-field !w-28 font-semibold"
                                                     value={att.name}
-                                                    onChange={e=>updateAttendee(idx, e.target.value)}
+                                                    onChange={e=>updateAttendee(idx, 'name', e.target.value)}
                                                     disabled={att.signed}
                                                 />
-                                                <div
-                                                    ref={att.isLeader ? leaderSignatureRef : null}
-                                                    onClick={() => att.isLeader && !att.signed && openSignModal(idx)}
-                                                    className={`flex-1 min-w-0 h-12 border rounded flex items-center justify-center transition ${att.isLeader ? (att.signed ? 'bg-white border-indigo-500 cursor-pointer' : 'bg-gray-50 border-dashed hover:bg-indigo-50 cursor-pointer') : 'bg-slate-50 border-slate-200 cursor-not-allowed text-slate-400'}`}
-                                                >
-                                                    {att.signed && att.signatureUrl ? <img src={att.signatureUrl} alt="서명" className="h-full object-contain" /> : <span className={`text-sm font-bold whitespace-nowrap ${att.isLeader ? 'text-gray-400' : 'text-slate-400'}`}><i className="fas fa-file-signature mr-1"></i>{att.isLeader ? '리더 서명(필수)' : '대표자 확인으로 생략'}</span>}
-                                                </div>
-                                                {!att.isLeader && (
-                                                    <button onClick={() => removeAttendee(idx)} className="w-8 h-8 shrink-0 flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition" title="참석자 삭제">
-                                                        <i className="fas fa-minus-circle"></i>
-                                                    </button>
+                                                <select aria-label="소속" className="input-field !w-24" value={att.affiliation || 'own'} onChange={e=>updateAttendee(idx, 'affiliation', e.target.value)}>
+                                                    <option value="own">자사</option>
+                                                    <option value="sub">협력사</option>
+                                                </select>
+                                                {att.affiliation === 'sub' && (
+                                                    <input type="text" aria-label="협력사 업체명" placeholder="업체명" className="input-field !w-32" value={att.company || ''} onChange={e=>updateAttendee(idx, 'company', e.target.value)} />
+                                                )}
+                                                {att.isLeader ? (
+                                                    <div
+                                                        ref={leaderSignatureRef}
+                                                        onClick={() => !att.signed && openSignModal(idx)}
+                                                        className={`flex-1 min-w-[160px] h-11 border rounded-lg flex items-center justify-center cursor-pointer ${att.signed ? 'bg-white border-blue-600' : 'bg-slate-50 border-dashed border-slate-300 hover:bg-blue-50'}`}
+                                                    >
+                                                        {att.signed && att.signatureUrl ? <img src={att.signatureUrl} alt="리더 서명" className="h-full object-contain" /> : <span className="text-sm font-bold text-slate-500"><i className="fas fa-file-signature mr-1"></i>리더 서명(필수)</span>}
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <span className="flex-1 min-w-[120px] text-xs text-slate-500">리더 확인으로 갈음</span>
+                                                        <button onClick={() => removeAttendee(idx)} aria-label="참석자 삭제" title="참석자 삭제" className="w-10 h-10 shrink-0 rounded-lg text-slate-500 hover:bg-slate-100">
+                                                            <i className="fas fa-xmark"></i>
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
                                         ))}
-                                        <button onClick={addAttendee} className="w-full py-2 bg-indigo-50 text-indigo-600 font-bold rounded text-sm hover:bg-indigo-100">+ 참석자 추가(선택)</button>
                                     </div>
+                                    <button onClick={addAttendee} className="w-full h-11 border-2 border-dashed border-slate-300 text-slate-600 rounded-lg text-sm font-semibold hover:bg-slate-50">+ 참석자 추가</button>
                                 </div>
                             )}
                         </section>
@@ -2331,6 +2243,71 @@
                         onSave={handleSaveSignature}
                         signerName={currentSignerIndex !== null ? (form.attendees[currentSignerIndex]?.name || '') : ''}
                     />
+                </div>
+            );
+        };
+
+        // --- 미조치 위험요인: 위험요인 단위로 모아 조치완료 처리 ---
+        const RiskQueueView = ({ items, canManage, onEdit, onResolve, setView }) => {
+            const [openKey, setOpenKey] = useState(null);
+            const [resolution, setResolution] = useState('');
+            const [resolver, setResolver] = useState('');
+            const [saving, setSaving] = useState(false);
+            const today = getLocalDateInputValue();
+            const submit = async (item) => {
+                if (!resolution.trim() || !resolver.trim()) return;
+                setSaving(true);
+                const ok = await onResolve(item.tbm, item.index, resolution.trim(), resolver.trim());
+                setSaving(false);
+                if (ok) setOpenKey(null);
+            };
+            return (
+                <div className="tone-panel overflow-hidden animate-fade-in-up">
+                    <SectionHero title="미조치 위험요인" subtitle={`조치여부가 '미조치'인 위험요인 ${items.length}건입니다. 조치가 끝나면 조치완료로 처리하세요.`} actions={<button onClick={() => setView('write')} className="btn btn-primary"><i className="fas fa-plus"></i>신규 등록</button>} />
+                    {items.length === 0 ? (
+                        <div className="px-6 py-14 text-center text-sm text-slate-500">현재 미조치 위험요인이 없습니다.</div>
+                    ) : (
+                        <ul className="divide-y divide-slate-200">
+                            {items.map((item) => {
+                                const { tbm, risk, index } = item;
+                                const key = `${tbm.id}-${index}`;
+                                const overdue = risk.dueDate && risk.dueDate < today;
+                                return (
+                                    <li key={key} className="px-4 sm:px-6 py-4">
+                                        <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${overdue ? 'bg-red-600 text-white' : 'bg-red-50 text-red-700'}`}>{overdue ? '기한 경과' : '조치 필요'}</span>
+                                                    {risk.level && <span className="px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-700">위험성 {risk.level}</span>}
+                                                    <span className="text-xs text-slate-500 tnum">{tbm.department} · {tbm.date} · {tbm.workName || '-'}</span>
+                                                </div>
+                                                <div className="mt-1.5 text-[15px] font-semibold text-slate-900">{risk.factor}</div>
+                                                <div className="mt-1 grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-0.5 text-sm text-slate-600">
+                                                    <div className="min-w-0">잠정조치 <span className="text-slate-900">{risk.action || '-'}</span></div>
+                                                    <div className={overdue ? 'text-red-700 font-semibold' : ''}>기한 <span className="tnum">{risk.dueDate || '-'}</span></div>
+                                                    <div>담당 <span className="text-slate-900">{risk.owner || '-'}</span></div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2 shrink-0">
+                                                {canManage(tbm) && <button onClick={() => { setOpenKey(key); setResolution(''); setResolver(risk.owner || ''); }} className="btn btn-primary">조치완료</button>}
+                                                <button onClick={() => onEdit(tbm)} className="btn btn-ghost">TBM 열기</button>
+                                            </div>
+                                        </div>
+                                        {openKey === key && (
+                                            <div className="mt-3 p-3 rounded-lg border border-slate-200 bg-slate-50 grid grid-cols-1 sm:grid-cols-[1fr_10rem_auto] gap-2 sm:items-end">
+                                                <div><label className="label-text">조치 내용</label><input className="input-field" placeholder="예: 유도자 지정·교육 완료" value={resolution} onChange={e => setResolution(e.target.value)} /></div>
+                                                <div><label className="label-text">조치자</label><input className="input-field" value={resolver} onChange={e => setResolver(e.target.value)} /></div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => submit(item)} disabled={saving || !resolution.trim() || !resolver.trim()} className="btn btn-primary !min-h-[44px] disabled:opacity-50">저장</button>
+                                                    <button onClick={() => setOpenKey(null)} className="btn btn-ghost !min-h-[44px]">취소</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
                 </div>
             );
         };
@@ -2538,18 +2515,30 @@
                     .map(t => ({ ...t, badge: '오늘 작업', meta: `${t.location || '-'} · 참석자 ${t.attendees?.length || 0}명` }));
             }, [myTbms]);
 
-            const riskQueue = useMemo(() => {
+            const openRisks = useMemo(() => {
                 return myTbms
-                    .filter(t => (t.risks || []).some(r => (r.result || 'yes') === 'no'))
-                    .map(t => ({
-                        ...t,
-                        badge: '조치 필요',
-                        meta: (t.risks || [])
-                            .filter(r => (r.result || 'yes') === 'no')
-                            .map(r => `• ${r.factor}${r.action ? ` - ${r.action}` : ''}`)
-                            .join('\n')
-                    }));
+                    .flatMap(t => (t.risks || []).map((risk, index) => ({ tbm: t, risk, index })))
+                    .filter(({ risk }) => String(risk.factor || '').trim() && (risk.result || 'yes') === 'no' && !risk.resolvedAt)
+                    .sort((a, b) => String(a.risk.dueDate || '9999').localeCompare(String(b.risk.dueDate || '9999')));
             }, [myTbms]);
+
+            const handleResolveRisk = async (tbm, index, resolution, resolver) => {
+                if (!canManageTbm(tbm)) {
+                    showToast('해당 TBM을 처리할 권한이 없습니다.', 'error');
+                    return false;
+                }
+                const now = new Date().toISOString();
+                const risks = (tbm.risks || []).map((r, i) => (i === index ? { ...r, resolvedAt: now, resolvedBy: resolver, resolution } : r));
+                try {
+                    await updateDoc(doc(db, "global_tbm_data", tbm.id), { risks, updatedAt: now });
+                    showToast('조치완료로 처리했습니다.', 'success');
+                    return true;
+                } catch (err) {
+                    console.error("조치완료 처리 실패:", err);
+                    showToast('조치완료 처리 중 오류가 발생했습니다.', 'error');
+                    return false;
+                }
+            };
 
             const stats = useMemo(() => {
                 const yearTbms = myTbms.filter(t => t.date.startsWith(currentYear));
@@ -2603,7 +2592,7 @@
                             <main className="flex-1 md:ml-64 p-4 sm:p-6 md:p-8 overflow-y-auto h-[100dvh] pt-[4.5rem] md:pt-8 app-main">
                                 {view === 'dashboard' && <DashboardView stats={stats} tbms={myTbms} currentYear={currentYear} setCurrentYear={setCurrentYear} allTbms={myTbms} availableYears={availableYears} />}
                                 {view === 'today' && <ActionQueueView title="오늘 작업" subtitle="오늘 날짜로 작성된 TBM을 빠르게 확인합니다" items={todayQueue} emptyMessage="오늘 등록된 작업이 없습니다." accent="sky" onEdit={handleEditTbm} onPdfDownload={handlePdfDownload} user={user} setView={setView} />}
-                                {view === 'risks' && <ActionQueueView title="미조치 위험요인" subtitle="조치여부가 '아니오'인 위험요인을 모아봅니다" items={riskQueue} emptyMessage="현재 미조치 위험요인이 없습니다." accent="rose" onEdit={handleEditTbm} onPdfDownload={handlePdfDownload} user={user} setView={setView} />}
+                                {view === 'risks' && <RiskQueueView items={openRisks} canManage={canManageTbm} onEdit={handleEditTbm} onResolve={handleResolveRisk} setView={setView} />}
                                 {view === 'list' && (
                                     <ListView 
                                         user={user} 
