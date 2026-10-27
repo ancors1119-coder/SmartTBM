@@ -694,120 +694,152 @@
             const affiliationText = (a) => (a?.affiliation === 'sub' ? (a.company ? `협력사
 ${a.company}` : '협력사') : '자사');
 
-            const TH = { border: '1px solid #000', background: '#f1f1f1', padding: '3px 6px 9px', textAlign: 'center', fontWeight: 700, verticalAlign: 'middle', lineHeight: 1.3 };
-            const TD = { border: '1px solid #000', padding: '3px 8px 9px', verticalAlign: 'middle', lineHeight: 1.4, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' };
-            const TABLE = { width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' };
-            const H = { fontWeight: 700, fontSize: '14px', borderLeft: '4px solid #000', paddingLeft: '8px', margin: '0 0 8px' };
-            const BOX = { border: '1px solid #000', padding: '8px 10px', minHeight: '40px', whiteSpace: 'pre-wrap', lineHeight: 1.5 };
-            const check = (v) => (v ? '☑' : '☐');
+            // 인쇄 양식 디자인: 엔코스 레드 포인트 + 흑백 출력에도 읽히는 연한 선
+            const RED = '#c41e22';
+            const INK = '#1f2329';
+            const LINE = '#c9cdd2';
+            const TINT = '#fbf1f1';
+            const MUTED = '#6b7280';
+            const TH = { borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, background: TINT, color: INK, padding: '4px 6px 9px', textAlign: 'center', fontWeight: 700, fontSize: '12px', verticalAlign: 'middle', lineHeight: 1.3 };
+            const TD = { borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, padding: '4px 8px 9px', verticalAlign: 'middle', lineHeight: 1.45, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' };
+            const TABLE = { width: '100%', borderCollapse: 'separate', borderSpacing: 0, borderTop: `1px solid ${LINE}`, borderLeft: `1px solid ${LINE}`, tableLayout: 'fixed' };
+            const BOX = { border: `1px solid ${LINE}`, padding: '8px 10px 12px', minHeight: '42px', whiteSpace: 'pre-wrap', lineHeight: 1.55 };
+            const LEVEL = { '상': { background: RED, color: '#fff' }, '중': { background: '#fde7c7', color: '#9a3412' }, '하': { background: '#eceef1', color: '#4b5563' } };
+            const Level = ({ v }) => (v
+                ? <span style={{ display: 'inline-block', minWidth: '24px', padding: '1px 6px 5px', borderRadius: '3px', fontWeight: 800, fontSize: '12px', ...(LEVEL[v] || LEVEL['하']) }}>{v}</span>
+                : '-');
+            const status = (r) => {
+                if ((r.result || 'yes') !== 'no') return <span style={{ color: '#15803d', fontWeight: 700 }}>✓ 완료</span>;
+                if (r.resolvedAt) return <span style={{ color: '#374151', fontWeight: 700 }}>✓ 사후조치{'\n'}<span style={{ fontWeight: 400, fontSize: '11px' }}>({mmdd(r.resolvedAt)})</span></span>;
+                return <span style={{ color: '#c2410c', fontWeight: 700 }}>● 미조치</span>;
+            };
+            const Title = ({ no, children, right }) => (
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '0 0 7px' }}>
+                    <span style={{ color: RED, fontWeight: 800, fontSize: '13px' }}>{no}</span>
+                    <span style={{ fontWeight: 800, fontSize: '14.5px', color: INK }}>{children}</span>
+                    {right && <span style={{ marginLeft: 'auto', fontSize: '11px', color: MUTED }}>{right}</span>}
+                </div>
+            );
+            const Bars = () => (
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '16px' }}>
+                    {[30, 42, 54, 66, 78, 90, 100].map((h, i) => <span key={i} style={{ display: 'inline-block', width: '3px', height: `${h}%`, background: RED }}></span>)}
+                </div>
+            );
+            const preItems = [['보호구 착용', pre.check1], ['장비 점검', pre.check2], ['건강 상태', pre.check3]];
+            const ownCount = attendees.length - subCount;
 
             const sections = [
-                {
-                    title: '위험요인 및 감소대책 (위험성평가 결과 공유)',
+                keyRisk && {
+                    title: '오늘의 중점 위험요인',
                     body: (
-                        <>
-                            <table style={TABLE}>
-                                <thead>
-                                    <tr>
-                                        <th style={{ ...TH, width: '7%' }}>No</th>
-                                        <th style={{ ...TH, width: '26%' }}>유해·위험요인</th>
-                                        <th style={{ ...TH, width: '9%' }}>위험성</th>
-                                        <th style={{ ...TH, width: '26%' }}>감소대책</th>
-                                        <th style={{ ...TH, width: '12%' }}>조치</th>
-                                        <th style={{ ...TH, width: '20%' }}>미조치 시 잠정조치·기한·담당</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {risks.length === 0 ? (
-                                        <tr><td colSpan="6" style={{ ...TD, textAlign: 'center', color: '#666' }}>기록 없음</td></tr>
-                                    ) : risks.map((r, i) => {
-                                        const no = (r.result || 'yes') === 'no';
-                                        const detail = no
-                                            ? [r.action || '-', r.dueDate ? `기한 ${r.dueDate}` : '', r.owner ? `담당 ${r.owner}` : '', r.resolvedAt ? `→ ${r.resolution || '조치완료'}` : ''].filter(Boolean).join('\n')
-                                            : '-';
-                                        return (
-                                            <tr key={i} style={isKey(r) ? { background: '#fff5f5' } : undefined}>
-                                                <td style={{ ...TD, textAlign: 'center', fontWeight: isKey(r) ? 700 : 400 }}>{isKey(r) ? `★${i + 1}` : i + 1}</td>
-                                                <td style={{ ...TD, fontWeight: isKey(r) ? 700 : 400 }}>{r.factor}</td>
-                                                <td style={{ ...TD, textAlign: 'center', fontWeight: 700 }}>{r.level || '-'}</td>
-                                                <td style={TD}>{r.measure || '-'}</td>
-                                                <td style={{ ...TD, textAlign: 'center' }}>{!no ? '☑ 완료' : r.resolvedAt ? `☑ 사후조치\n(${mmdd(r.resolvedAt)})` : '☐ 미조치'}</td>
-                                                <td style={{ ...TD, fontSize: '12px' }}>{detail}</td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                            <div style={{ marginTop: '4px', fontSize: '11px', color: '#555' }}>★ 중점 위험요인(중대재해로 이어질 수 있는 위험) · 위험성: 사업장 위험성평가 기준 상·중·하</div>
-                        </>
+                        <div style={{ display: 'flex', border: `2px solid ${RED}` }}>
+                            <div style={{ background: RED, color: '#fff', width: '30mm', padding: '8px 10px 12px', fontWeight: 800, fontSize: '13px', lineHeight: 1.35, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>★ 중점 위험<span style={{ fontSize: '11px', fontWeight: 600, opacity: 0.9, marginTop: '2px' }}>중대재해 우려</span></div>
+                            <div style={{ flex: 1, padding: '8px 12px 12px' }}>
+                                <div style={{ fontSize: '16px', fontWeight: 800, color: INK, lineHeight: 1.4 }}>{keyRisk.factor}</div>
+                                <div style={{ marginTop: '4px', lineHeight: 1.5 }}><span style={{ color: RED, fontWeight: 700 }}>대책 </span>{keyRisk.measure || '-'}</div>
+                            </div>
+                        </div>
                     )
                 },
                 {
-                    title: '중점 위험요인',
-                    body: (
-                        <table style={TABLE}>
-                            <tbody>
-                                <tr><th style={{ ...TH, width: '18%' }}>선정</th><td style={{ ...TD, fontWeight: 700 }}>{keyRisk?.factor || '-'}</td></tr>
-                                <tr><th style={TH}>대책</th><td style={TD}>{keyRisk?.measure || '-'}</td></tr>
-                            </tbody>
-                        </table>
-                    )
-                },
-                { title: '근로자 준수·주의사항', body: <div style={BOX}>{tbm.workerRules || '-'}</div> },
-                {
-                    title: '작업 전 안전점검',
-                    body: (
-                        <table style={TABLE}>
-                            <tbody>
-                                <tr>
-                                    <th style={{ ...TH, width: '18%' }}>점검 항목</th>
-                                    <td style={TD}>{check(pre.check1)} 보호구 착용　　{check(pre.check2)} 장비 점검　　{check(pre.check3)} 건강 상태</td>
-                                </tr>
-                                <tr><th style={TH}>점검 결과</th><td style={TD}>{tbm.dailyCheckResult || '특이사항 없음'}</td></tr>
-                            </tbody>
-                        </table>
-                    )
-                },
-                { title: '근로자 의견·아차사고', body: <div style={BOX}>{tbm.workerFeedback || '없음'}</div> },
-                tbm.photoUrl && {
-                    title: 'TBM 활동 사진',
-                    body: <div style={{ ...BOX, textAlign: 'center' }}><img src={tbm.photoUrl} alt="활동사진" style={{ maxHeight: '220px', maxWidth: '100%', objectFit: 'contain', display: 'inline-block' }} /></div>
-                },
-                {
-                    title: `참석자 명단 (총 ${attendees.length}명${subCount ? ` · 협력사 ${subCount}명` : ''})`,
+                    title: '위험요인 및 감소대책',
+                    right: '위험성평가 결과 공유 · 위험성은 사업장 위험성평가 기준(상·중·하)',
                     body: (
                         <table style={TABLE}>
                             <thead>
                                 <tr>
-                                    {[0, 1].map(k => (
-                                        <React.Fragment key={k}>
-                                            <th style={{ ...TH, width: '15%' }}>이름</th>
-                                            <th style={{ ...TH, width: '15%' }}>소속</th>
-                                            <th style={{ ...TH, width: '20%' }}>서명</th>
-                                        </React.Fragment>
-                                    ))}
+                                    <th style={{ ...TH, width: '7%' }}>No</th>
+                                    <th style={{ ...TH, width: '27%' }}>유해·위험요인</th>
+                                    <th style={{ ...TH, width: '9%' }}>위험성</th>
+                                    <th style={{ ...TH, width: '27%' }}>감소대책</th>
+                                    <th style={{ ...TH, width: '11%' }}>조치</th>
+                                    <th style={{ ...TH, width: '19%' }}>미조치 시 잠정조치·기한·담당</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {attendees.length === 0 ? (
-                                    <tr><td colSpan="6" style={{ ...TD, textAlign: 'center', color: '#666' }}>참석자 기록 없음</td></tr>
-                                ) : Array.from({ length: Math.ceil(attendees.length / 2) }, (_, row) => (
-                                    <tr key={row}>
-                                        {[attendees[row * 2], attendees[row * 2 + 1]].map((a, k) => (
-                                            <React.Fragment key={k}>
-                                                <td style={{ ...TD, textAlign: 'center', fontWeight: 700, height: '46px' }}>{a?.name || ''}</td>
-                                                <td style={{ ...TD, textAlign: 'center', fontSize: '12px' }}>{a ? affiliationText(a) : ''}</td>
-                                                <td style={{ ...TD, textAlign: 'center', padding: '3px' }}>
-                                                    {!a ? '' : a.isLeader
-                                                        ? (a.signatureUrl ? <img src={a.signatureUrl} alt="서명" style={{ maxHeight: '38px', maxWidth: '100%', display: 'inline-block' }} /> : <span style={{ color: '#c2410c', fontSize: '12px', fontWeight: 700 }}>(리더 미서명)</span>)
-                                                        : <span style={{ color: '#666', fontSize: '11px' }}>리더 확인으로 갈음</span>}
-                                                </td>
-                                            </React.Fragment>
-                                        ))}
-                                    </tr>
-                                ))}
+                                {risks.length === 0 ? (
+                                    <tr><td colSpan="6" style={{ ...TD, textAlign: 'center', color: MUTED }}>기록 없음</td></tr>
+                                ) : risks.map((r, i) => {
+                                    const no = (r.result || 'yes') === 'no';
+                                    const detail = no
+                                        ? [r.action || '-', r.dueDate ? `기한 ${r.dueDate}` : '', r.owner ? `담당 ${r.owner}` : '', r.resolvedAt ? `→ ${r.resolution || '조치완료'}` : ''].filter(Boolean).join('\n')
+                                        : '-';
+                                    const key = isKey(r);
+                                    return (
+                                        <tr key={i} style={key ? { background: '#fff6f6' } : undefined}>
+                                            <td style={{ ...TD, textAlign: 'center', fontWeight: key ? 800 : 400, color: key ? RED : INK }}>{key ? `★${i + 1}` : i + 1}</td>
+                                            <td style={{ ...TD, fontWeight: key ? 700 : 400 }}>{r.factor}</td>
+                                            <td style={{ ...TD, textAlign: 'center' }}><Level v={r.level} /></td>
+                                            <td style={TD}>{r.measure || '-'}</td>
+                                            <td style={{ ...TD, textAlign: 'center', fontSize: '12px' }}>{status(r)}</td>
+                                            <td style={{ ...TD, fontSize: '11.5px', color: no ? INK : MUTED }}>{detail}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
+                    )
+                },
+                {
+                    title: '근로자 준수사항 · 작업 전 점검',
+                    body: (
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
+                            <div style={{ ...BOX, flex: 1.5 }}>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: RED, marginBottom: '4px' }}>준수·주의사항</div>
+                                {tbm.workerRules || '-'}
+                            </div>
+                            <div style={{ ...BOX, flex: 1 }}>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: RED, marginBottom: '4px' }}>작업 전 점검</div>
+                                {preItems.map(([label, ok]) => (
+                                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px dashed ${LINE}`, padding: '1px 0 6px', marginBottom: '3px' }}>
+                                        <span>{label}</span>
+                                        <span style={{ fontWeight: 700, color: ok ? '#15803d' : '#c2410c' }}>{ok ? '✓ 확인' : '□ 미확인'}</span>
+                                    </div>
+                                ))}
+                                <div style={{ marginTop: '4px', fontSize: '12px' }}><span style={{ color: MUTED }}>결과 </span>{tbm.dailyCheckResult || '특이사항 없음'}</div>
+                            </div>
+                        </div>
+                    )
+                },
+                { title: '근로자 의견 · 아차사고', body: <div style={BOX}>{tbm.workerFeedback || '없음'}</div> },
+                {
+                    title: '참석 확인',
+                    right: `총 ${attendees.length}명 (자사 ${ownCount}명${subCount ? ` · 협력사 ${subCount}명` : ''})`,
+                    body: (
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                            <div style={{ flex: 1.35 }}>
+                                {tbm.photoUrl ? (
+                                    <div style={{ border: `1px solid ${LINE}`, padding: '4px', background: '#fff' }}>
+                                        <img src={tbm.photoUrl} alt="TBM 활동 사진" style={{ width: '100%', height: '68mm', objectFit: 'contain', background: '#f3f4f6', display: 'block' }} />
+                                    </div>
+                                ) : (
+                                    <div style={{ border: '2px dashed #f97316', height: '68mm', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c2410c', fontWeight: 700, textAlign: 'center', lineHeight: 1.5, whiteSpace: 'pre-line' }}>활동 사진 미첨부{'\n'}참석 확인 자료 없음</div>
+                                )}
+                                <div style={{ marginTop: '5px', fontSize: '11px', color: MUTED, lineHeight: 1.45 }}>TBM 활동 사진으로 참석자 전원 확인을 갈음합니다. TBM 리더는 상단 확인란에 서명합니다.</div>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                            <table style={TABLE}>
+                                <thead>
+                                    <tr>
+                                        <th style={{ ...TH, width: '14%' }}>No</th>
+                                        <th style={{ ...TH, width: '38%' }}>이름</th>
+                                        <th style={TH}>소속</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {attendees.length === 0 ? (
+                                        <tr data-nocut><td colSpan="3" style={{ ...TD, textAlign: 'center', color: MUTED }}>참석자 기록 없음</td></tr>
+                                    ) : attendees.map((a, i) => (
+                                        <tr key={i} data-nocut>
+                                            <td style={{ ...TD, textAlign: 'center', fontSize: '11.5px', color: MUTED }}>{i + 1}</td>
+                                            <td style={{ ...TD, textAlign: 'center', fontWeight: 700 }}>{a.name}{a.isLeader && <span style={{ color: RED, fontSize: '10.5px', marginLeft: '4px' }}>리더</span>}</td>
+                                            <td style={{ ...TD, textAlign: 'center', fontSize: '11.5px', whiteSpace: 'normal' }}>{a.affiliation === 'sub' ? `협력사${a.company ? ` · ${a.company}` : ''}` : '자사'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            </div>
+                        </div>
                     )
                 }
             ].filter(Boolean);
@@ -821,9 +853,9 @@ ${a.company}` : '협력사') : '자사');
                         await Promise.all(Array.from(node.querySelectorAll('img')).map(img => (img.complete ? null : new Promise(res => { img.onload = img.onerror = res; }))));
                         await new Promise(resolve => setTimeout(resolve, 300));
 
-                        // 쪽 나눔 후보: 표 본문 행·섹션 끝 (머리글 행 바로 뒤에서는 자르지 않음)
+                        // 쪽 나눔 후보: 표 본문 행·섹션 끝 (머리글 행 바로 뒤, 사진 옆 명단 행에서는 자르지 않음)
                         const nodeTop = node.getBoundingClientRect().top;
-                        const cuts = Array.from(node.querySelectorAll('tbody tr, [data-pdf-block]')).map(el => el.getBoundingClientRect().bottom - nodeTop + 1);
+                        const cuts = Array.from(node.querySelectorAll('tbody tr:not([data-nocut]), [data-pdf-block]')).map(el => el.getBoundingClientRect().bottom - nodeTop + 1);
                         const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: node.scrollWidth });
                         const ratio = canvas.height / node.offsetHeight;
                         const cutPx = cuts.map(c => Math.round(c * ratio)).sort((a, b) => a - b);
@@ -871,21 +903,49 @@ ${a.company}` : '협력사') : '자사');
 
             return (
                 <div style={{ position: 'fixed', left: '-10000px', top: 0 }}>
-                    <div ref={docRef} className="bg-white text-black" style={{ width: '210mm', padding: '12mm', boxSizing: 'border-box', fontSize: '13px' }}>
-                        <div data-pdf-block style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '14px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.28em' }}>{COMPANY_NAME}</div>
-                            <div style={{ fontSize: '22px', fontWeight: 800, marginTop: '4px' }}>작업 전 안전점검회의(TBM) 일지</div>
-                        </div>
-                        <div data-pdf-block style={{ marginBottom: '16px' }}>
-                            <table style={{ ...TABLE, border: '2px solid #000' }}>
+                    <div ref={docRef} className="bg-white text-black" style={{ width: '210mm', padding: '11mm 12mm 12mm', boxSizing: 'border-box', fontSize: '13px', color: INK }}>
+                        <div data-pdf-block style={{ display: 'flex', alignItems: 'stretch', gap: '12px', paddingBottom: '9px', borderBottom: `3px solid ${RED}` }}>
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+                                    <img src={LOGO_RED} alt={COMPANY_NAME} style={{ height: '15px', display: 'block' }} />
+                                    <Bars />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '23px', fontWeight: 800, letterSpacing: '-0.01em', marginTop: '8px' }}>작업 전 안전점검회의(TBM) 일지</div>
+                                    <div style={{ fontSize: '11.5px', color: MUTED, marginTop: '2px' }}>{tbm.date} · {tbm.department} · 위험성평가 결과 공유 기록</div>
+                                </div>
+                            </div>
+                            <table style={{ ...TABLE, width: '62mm' }}>
                                 <tbody>
                                     <tr>
-                                        <th style={{ ...TH, width: '15%' }}>TBM 일시</th>
-                                        <td style={{ ...TD, width: '35%' }}>{tbm.date} {tbm.tbmTime || tbm.startTime || ''}</td>
-                                        <th style={{ ...TH, width: '15%' }}>부서</th>
+                                        <th style={{ ...TH, fontSize: '11px', padding: '3px 4px 7px' }}>TBM 리더</th>
+                                        <th style={{ ...TH, fontSize: '11px', padding: '3px 4px 7px' }}>관리감독자</th>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ ...TD, height: '44px', textAlign: 'center', padding: '2px' }}>
+                                            {leaderAtt?.signatureUrl
+                                                ? <img src={leaderAtt.signatureUrl} alt="서명" style={{ maxHeight: '36px', maxWidth: '100%', display: 'inline-block' }} />
+                                                : <span style={{ color: '#c2410c', fontSize: '11px', fontWeight: 700 }}>미서명</span>}
+                                        </td>
+                                        <td style={{ ...TD, height: '44px' }}></td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ ...TD, textAlign: 'center', fontSize: '11.5px', fontWeight: 700, padding: '2px 4px 7px' }}>{leaderName}</td>
+                                        <td style={{ ...TD, textAlign: 'center', fontSize: '11px', color: MUTED, padding: '2px 4px 7px' }}>(서명)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div data-pdf-block style={{ margin: '12px 0 16px' }}>
+                            <table style={TABLE}>
+                                <tbody>
+                                    <tr>
+                                        <th style={{ ...TH, width: '14%' }}>TBM 일시</th>
+                                        <td style={{ ...TD, width: '36%' }}>{tbm.date} {tbm.tbmTime || tbm.startTime || ''}</td>
+                                        <th style={{ ...TH, width: '14%' }}>부서</th>
                                         <td style={TD}>{tbm.department}</td>
                                     </tr>
-                                    <tr><th style={TH}>작업명</th><td colSpan="3" style={{ ...TD, fontWeight: 700 }}>{tbm.workName}</td></tr>
+                                    <tr><th style={TH}>작업명</th><td colSpan="3" style={{ ...TD, fontWeight: 800, fontSize: '14px' }}>{tbm.workName}</td></tr>
                                     <tr>
                                         <th style={TH}>작업 장소</th><td style={TD}>{tbm.location}</td>
                                         <th style={TH}>작업 시간</th><td style={TD}>{tbm.startTime} ~ {tbm.endTime}</td>
@@ -894,33 +954,22 @@ ${a.company}` : '협력사') : '자사');
                                         <th style={TH}>TBM 리더</th><td style={TD}>{leaderName}</td>
                                         <th style={TH}>현장 환경</th><td style={TD}>온도 {tbm.temperature || '-'}℃ · 습도 {tbm.humidity || '-'}%</td>
                                     </tr>
-                                    <tr><th style={TH}>작업 내용</th><td colSpan="3" style={{ ...TD, height: '60px', verticalAlign: 'top' }}>{tbm.workDesc}</td></tr>
+                                    <tr><th style={TH}>작업 내용</th><td colSpan="3" style={{ ...TD, height: '46px', verticalAlign: 'top' }}>{tbm.workDesc}</td></tr>
                                     {tbm.preJobBriefingDone === false && (
-                                        <tr><th style={TH}>공유 미실시</th><td colSpan="3" style={TD}>{tbm.preJobBriefingAction || '-'}</td></tr>
+                                        <tr><th style={{ ...TH, color: '#c2410c' }}>공유 미실시</th><td colSpan="3" style={TD}>{tbm.preJobBriefingAction || '-'}</td></tr>
                                     )}
                                 </tbody>
                             </table>
                         </div>
                         {sections.map((s, i) => (
                             <div key={i} data-pdf-block style={{ marginBottom: '16px' }}>
-                                <div style={H}>{i + 1}. {s.title}</div>
+                                <Title no={String(i + 1).padStart(2, '0')} right={s.right}>{s.title}</Title>
                                 {s.body}
                             </div>
                         ))}
-                        <div data-pdf-block>
-                            <table style={TABLE}>
-                                <tbody>
-                                    <tr>
-                                        <th style={{ ...TH, width: '18%' }}>작성(TBM 리더)</th>
-                                        <td style={{ ...TD, width: '32%', height: '52px' }}>
-                                            <span style={{ fontWeight: 700 }}>{leaderName}</span>
-                                            {leaderAtt?.signatureUrl && <img src={leaderAtt.signatureUrl} alt="서명" style={{ maxHeight: '36px', marginLeft: '10px', verticalAlign: 'middle', display: 'inline-block' }} />}
-                                        </td>
-                                        <th style={{ ...TH, width: '18%' }}>관리감독자 확인</th>
-                                        <td style={TD}></td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div data-pdf-block style={{ borderTop: `1px solid ${LINE}`, paddingTop: '5px', display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: MUTED }}>
+                            <span>{COMPANY_NAME} 안전보건 · 작업 전 안전점검회의(TBM) 기록</span>
+                            <span>고용노동부 고시 「사업장 위험성평가에 관한 지침」에 따른 근로자 공유</span>
                         </div>
                     </div>
                 </div>
